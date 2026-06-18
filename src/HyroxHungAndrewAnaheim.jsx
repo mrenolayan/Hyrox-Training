@@ -105,14 +105,11 @@ const CLIENT = {
   raceISO: "2026-12-04T07:00:00",          // drives countdown + week labels
   weeks: 16,                               // 8, 12, or 16 (both athletes want 20 — extend weekPlan when ready)
   defaultUnits: "us",                      // "us" (lb/mi) or "metric" (kg/km)
-  startOptions: [
-    { id: "aug18", label: "Start Mon Aug 18", iso: "2026-08-18" },
-    { id: "aug25", label: "Start Mon Aug 25", iso: "2026-08-25" },
-  ],
+  startOptions: [],  // auto-calculated from race date — see startISO below
   // One entry per athlete. Color auto-fills if omitted.
   athletes: [
-    { name: "Hung",   role: "Power lead · Ski, Row, Farmers, Sled Pull", pace: "Current pace 8:30/mi — hold to team pace in group runs." },
-    { name: "Andrew", role: "Pace lead · Wall Balls, BBJ, Running",      pace: "Target team pace ~9:00–9:30/mi. You set the tempo." },
+    { name: "Hung",   role: "Power lead · Ski, Row, Farmers, Sled Pull", pace: "Current: 8:30/mi. Race target: ~8:00–8:30/mi together." },
+    { name: "Andrew", role: "Pace lead · Wall Balls, BBJ, Running",      pace: "Current: 6mi @ 9:00/mi. Goal: 6mi @ 7:00/mi. Race target: ~8:00–8:30/mi together." },
   ],
   // Plan phases shown on the Overview tab.
   phases: [
@@ -274,17 +271,204 @@ const weeklyQuotes = {
 // metric: what to log for the session. shared? = same session for the team.
 // Day entries use a0..a3 (athlete index). a0/a1 carry the Walker seed plan;
 // a2/a3 fall back to a0 for relay formats until a per-athlete plan is authored.
+// Hung (a0): 4 days/week. Strengths: Ski, Row, Farmers. Weak: Sled Push.
+// Andrew (a1): 5 days/week. Strengths: Running endurance. Weak: nearly all stations.
+//   Andrew's home equipment: treadmill, bike, squat rack, bench, cable machine, box jump, sled push/pull, sandbag, wall ball.
+// Shared Thursday HIIT and Saturday run let both athletes compete against each other.
 const weekPlan = [
+  // ─── PHASE 1: BASE (Weeks 1–5) ────────────────────────────────────────────
   {
-    week: 1, phase: 1, focus: "Ease in. Monday run, midweek skills, weekend long run.",
+    week: 1, phase: 1, focus: "Ease in. Establish baseline runs, station intro, first HIIT.",
     days: [
-      { day: "Mon", shared: true, a0: { type: "together", label: "Easy Run 3km", detail: "At 6:15–6:30/km, Zone 2, conversational. Hold back — this is the team pace.", metric: "Avg pace /km" }, a1: { type: "together", label: "Easy Run 3km", detail: "At 6:15–6:30/km, Zone 2, conversational. This is your race pace — own it.", metric: "Avg pace /km" } },
-      { day: "Tue", shared: true, a0: { type: "strength", label: "Strength A", detail: "Heavier loads. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Same session, your loads. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Wall balls 2×15 (6kg, your accessory).", metric: "Top weight" } },
-      { day: "Wed", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
-      { day: "Thu", shared: true, a0: { type: "stations", label: "Station Skills", detail: "Sled push 4×12.5m moderate + 3×500m row easy + wall ball technique. Alternate — one works at a time, learn the rhythm.", metric: "Sled / row time" }, a1: { type: "stations", label: "Station Skills", detail: "Sled push 4×12.5m moderate + 3×500m row easy (you lead) + wall ball technique. Practice your share. Note splits.", metric: "Sled / row time" } },
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Treadmill Run 3mi", detail: "Treadmill or outdoor at 9:30–10:00/mi, Zone 2. Conversational pace — no pushing yet. This is your baseline.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Home gym. Back squat 4×6 (squat rack) · RDL 3×8 · Cable rows 3×10 · Box jumps 3×8 · Calf raises 3×15.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Station Intro — Machines", detail: "Gym. Ski erg 3×250m easy · Row 3×250m easy · Farmers carry 3×40m light. Focus on form, not speed.", metric: "Time / splits" }, a1: { type: "stations", label: "Station Intro — Ground Work", detail: "Home. Sled push 4×12.5m moderate · Wall ball 3×15 (6kg) · Sandbag lunges 3×20m. Learn the movements, note the difficulty.", metric: "Time / splits" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 12:00: 200m run · 10 air squats · 8 burpees. Log your rounds. Andrew is doing the same — compare after.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 12:00: 200m run · 10 air squats · 8 burpees. Log your rounds. Hung is doing the same — compare after.", metric: "Rounds" } },
       { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
-      { day: "Sat", shared: true, a0: { type: "together", label: "Long Run 5km", detail: "At 6:30–6:45/km, Zone 2. Steady aerobic effort, fuel as you go.", metric: "Avg pace /km" }, a1: { type: "together", label: "Long Run 5km", detail: "At 6:30–6:45/km, Zone 2. Steady — relax and talk, fuel as you go.", metric: "Avg pace /km" } },
+      { day: "Sat", a0: { type: "run_easy", label: "Run 3km — Compete", detail: "Easy effort, 9:00–9:30/mi. Log your pace — Andrew is running the same distance. Compare splits.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Run 3km — Compete", detail: "Treadmill or outdoor, 9:30–10:00/mi. Log your pace — Hung is running the same distance. Compare splits.", metric: "Avg pace /mi" } },
       { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 2, phase: 1, focus: "Add volume. More runs for Andrew, machine reps for Hung.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 3.5mi", detail: "Treadmill or outdoor at 9:30–10:00/mi. Steady Zone 2. Focus on time on feet.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Home gym. Back squat 4×6 · RDL 3×8 · Cable rows 3×10 · Box jumps 3×8 · Calf raises 3×15. Add 5lb from last week.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Machines — Volume", detail: "Gym. Ski erg 4×250m (note splits) · Row 4×250m · Farmers carry 4×40m. Rest 90s between sets.", metric: "Time / splits" }, a1: { type: "stations", label: "Ground Work — Volume", detail: "Home. Sled push 4×12.5m · Wall ball 4×15 (6kg) · Sandbag lunges 4×20m. Note difficulty at each set.", metric: "Time / splits" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "3 Rounds: 400m run · 15 air squats · 10 jumping lunges · 10 burpees. Rest 90s. Log total time — compare with Andrew.", metric: "Total time" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "3 Rounds: 400m run · 15 air squats · 10 jumping lunges · 10 burpees. Rest 90s. Log total time — compare with Hung.", metric: "Total time" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_easy", label: "Run 4km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Run 4km — Compete", detail: "Treadmill or outdoor, 9:30–10:00/mi. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 3, phase: 1, focus: "Strength B intro. Andrew: first dedicated sled focus.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 4mi", detail: "Treadmill or outdoor at 9:30–10:00/mi. Zone 2, keep it comfortable.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength B", detail: "Gym. Deadlift 4×5 · Bent-over row 3×8 · Sandbag lunges 3×20m · Burpee broad jumps 3×8.", metric: "Top weight" }, a1: { type: "strength", label: "Strength B", detail: "Home/gym. Bench press 4×6 · Cable chest fly 3×10 · Cable lateral raises 3×12 · Wall ball 3×15 · Box jumps 3×8.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Sled + Machine Circuit", detail: "Gym. 3 Rounds: sled push 12.5m heavy + ski 250m + row 250m + farmers carry 40m. Rest 2 min. Sled is your weak spot — attack it.", metric: "Round times" }, a1: { type: "sled", label: "Sled Focus", detail: "Home. 4×(sled push 12.5m + sled pull 12.5m). Full rest between. This is your #1 weak station — benchmark weight and time. Log both.", metric: "Weight / time" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 15:00: 200m run · 12 walking lunges · 10 air squats · 8 burpees. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 15:00: 200m run · 12 walking lunges · 10 air squats · 8 burpees. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_easy", label: "Run 5km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Run 5km — Compete", detail: "Treadmill or outdoor, 9:30–10:00/mi. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 4, phase: 1, focus: "Full circuits. Push the pace on Saturday run.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 4mi", detail: "Treadmill or outdoor at 9:30–10:00/mi. Steady Zone 2.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15. Beat last week's weights.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Home gym. Back squat 4×6 · RDL 3×8 · Cable rows 3×12 · Box jumps 4×8 · Calf raises 3×15. Beat last week.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Full Circuit", detail: "Gym. For time: ski 500m · row 500m · farmers carry 40m · sled push 12.5m. Rest 3 min. Repeat 2 more rounds.", metric: "Round times" }, a1: { type: "stations", label: "Full Circuit", detail: "Home. For time: sled push 12.5m · sled pull 12.5m · wall ball 20 reps · sandbag lunges 20m · box jumps 10. Rest 3 min. Repeat 2 more rounds.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "4 Rounds For Time: 300m run · 12 burpees · 15 air squats · 10 walking lunges. Log time — compare with Andrew.", metric: "Total time" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "4 Rounds For Time: 300m run · 12 burpees · 15 air squats · 10 walking lunges. Log time — compare with Hung.", metric: "Total time" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_pace", label: "Pace Run 5km — Compete", detail: "Push to 8:30–9:00/mi. Not a sprint, but not easy. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_pace", label: "Pace Run 5km — Compete", detail: "Push to 9:00–9:30/mi. Step it up from your easy pace. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 5, phase: 1, focus: "Deload. Light sessions only — body resets before the Build phase.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 3mi (light)", detail: "Very easy, 10:00/mi or slower. Deload week — just move.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength (light)", detail: "Gym. 70% loads. Back squat 3×5 · RDL 3×6 · Walking lunges 2×16/leg. No grinding.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (light)", detail: "Home. 70% loads. Back squat 3×5 · Cable rows 3×8 · Box jumps 2×6. Easy.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Light, Compete", detail: "AMRAP 10:00 (easy): 200m jog · 8 air squats · 6 burpees. Gentle. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Light, Compete", detail: "AMRAP 10:00 (easy): 200m jog · 8 air squats · 6 burpees. Gentle. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_easy", label: "Run 3km — Compete", detail: "Very easy, 9:30/mi. Deload — enjoy it. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Run 3km — Compete", detail: "Very easy, 10:00–10:30/mi. Deload. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  // ─── PHASE 2: BUILD (Weeks 6–12) ──────────────────────────────────────────
+  {
+    week: 6, phase: 2, focus: "Build begins. Bricks intro. Andrew: sled + wall ball combos.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 5mi", detail: "Treadmill or outdoor at 9:30–10:00/mi. Zone 2. First run over 5 miles — keep it comfortable.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Home/gym. Back squat 4×6 · RDL 3×8 · Cable rows 3×12 · Box jumps 4×8 · Sandbag cleans 3×8 · Calf raises 3×15.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "brick", label: "BRICK — Ski + Run", detail: "Gym. 4×(ski erg 250m + 400m run at 8:30/mi). You lead the ski — this is your strength. Note ski splits.", metric: "Round times" }, a1: { type: "brick", label: "BRICK — Sled + Run", detail: "Home. 4×(sled push 12.5m + 400m treadmill at 9:00/mi). Your hardest station + your base mover. Attack the sled.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 18:00: 300m run · 15 walking lunges · 12 air squats · 10 burpees. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 18:00: 300m run · 15 walking lunges · 12 air squats · 10 burpees. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 6km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 6km — Compete", detail: "9:30–10:00/mi. Building your base. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 7, phase: 2, focus: "Sled benchmark week. Andrew: wall ball + BBJ dev.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 4mi", detail: "Push to 8:45–9:00/mi for 4 miles. First real pace effort. Treadmill for control.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength B", detail: "Gym. Deadlift 4×5 · Bent-over row 3×8 · Sandbag lunges 3×20m · Burpee broad jumps 3×8. Increase loads.", metric: "Top weight" }, a1: { type: "strength", label: "Strength B", detail: "Home/gym. Bench press 4×6 · Cable fly 3×10 · Sandbag lunges 4×20m · Wall ball 3×20 · Box jumps 3×10.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "sled", label: "SLED @ Race Weight — Benchmark", detail: "Gym. Sled push 4×12.5m @ 152kg (or max) + pull 4×12.5m @ 103kg. Full rest. Weak spot — this is benchmark day. Log weight and time.", metric: "Weight / time" }, a1: { type: "stations", label: "Wall Ball + BBJ Circuit", detail: "Home. 4 Rounds: wall ball 20 reps (6kg) + 10 box jumps (BBJ sub) + sandbag lunges 20m. Rest 90s. Note round times.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "5 Rounds For Time: 200m run · 10 burpees · 10 walking lunges · 8 jumping squats. Log time — compare with Andrew.", metric: "Total time" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "5 Rounds For Time: 200m run · 10 burpees · 10 walking lunges · 8 jumping squats. Log time — compare with Hung.", metric: "Total time" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 7km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 7km — Compete", detail: "9:30–10:00/mi. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 8, phase: 2, focus: "Brick intensity up. Andrew: sled pull + row at gym.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 4mi", detail: "Target 8:30–9:00/mi. Building pace each week. Treadmill for consistency.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15. Keep adding weight.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A", detail: "Home/gym. Back squat 4×8 · RDL 3×10 · Cable rows 3×12 · Box jumps 4×10 · Calf raises 3×15.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "brick", label: "BRICK — Row + Run", detail: "Gym. 4×(row 250m + 800m run at 8:30/mi). Row is your strength — note splits, keep effort high. Build run pace off the rower.", metric: "Round times" }, a1: { type: "brick", label: "BRICK — Sled Pull + Run", detail: "Gym visit. 4×(sled pull 12.5m + 400m treadmill/run at 9:00/mi). Sled pull is a major weak spot — attack it today.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 15 walking lunges · 12 burpees · 10 jumping lunges. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 15 walking lunges · 12 burpees · 10 jumping lunges. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 8km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 8km — Compete", detail: "9:30–10:00/mi. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 9, phase: 2, focus: "Mid-build deload. Protect the body before the peak weeks.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 3mi (light)", detail: "Very easy, 10:00+/mi. Deload — just move.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength (light)", detail: "Gym. 70% loads. Back squat 3×5 · RDL 3×6 · Walking lunges 2×16/leg.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (light)", detail: "Home. 70% loads. Back squat 3×5 · Cable rows 3×8 · Box jumps 2×6.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Light, Compete", detail: "AMRAP 12:00 (easy): 200m jog · 8 air squats · 6 burpees. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Light, Compete", detail: "AMRAP 12:00 (easy): 200m jog · 8 air squats · 6 burpees. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_easy", label: "Run 5km — Compete", detail: "Easy, 9:30/mi. Deload — enjoy. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Run 5km — Compete", detail: "Easy, 10:00/mi. Deload. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 10, phase: 2, focus: "Peak build. Race-weight sleds. Andrew: full combo bricks.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 5mi", detail: "Target 8:15–8:30/mi. Pushing toward goal pace. Keep form relaxed.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength B", detail: "Gym. Deadlift 4×5 · Bent-over row 3×8 · Sandbag lunges 4×20m · Burpee broad jumps 4×10.", metric: "Top weight" }, a1: { type: "strength", label: "Strength B", detail: "Home/gym. Bench press 4×6 · Sandbag lunges 4×20m · Wall ball 4×20 · Box jumps 4×10.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "sled", label: "SLED @ Race Weight", detail: "Gym. Sled push 5×12.5m @ 152kg + pull 5×12.5m @ 103kg. Full rest. Beat your Week 7 benchmark times.", metric: "Weight / time" }, a1: { type: "brick", label: "BRICK — Full Station Combo", detail: "Home. 3 Rounds: sled push 12.5m + sled pull 12.5m + wall ball 15 reps + sandbag lunges 20m + 400m treadmill. Rest 3 min.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "5 Rounds For Time: 400m run · 15 burpees · 15 air squats · 10 jumping lunges. Log time — compare with Andrew.", metric: "Total time" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "5 Rounds For Time: 400m run · 15 burpees · 15 air squats · 10 jumping lunges. Log time — compare with Hung.", metric: "Total time" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 10km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 10km — Compete", detail: "9:30–10:00/mi. 6+ miles — your longest training run. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 11, phase: 2, focus: "Race-intensity bricks. Andrew: farmers carry + BBJ dev.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 5mi", detail: "Target 8:00–8:30/mi. Closing in on goal pace. Track every mile split.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength A (peak)", detail: "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 4×20/leg · Kettlebell carry 4×100m. Heaviest week yet.", metric: "Top weight" }, a1: { type: "strength", label: "Strength A (peak)", detail: "Home/gym. Back squat 4×8 · RDL 3×10 · Cable rows 4×12 · Sandbag cleans 3×10 · Box jumps 4×10.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "brick", label: "BRICK — Ski + Farmers + Run", detail: "Gym. 4×(ski 250m + farmers carry 40m (2×24kg) + 800m at 8:30/mi). Your strength stations — own them. Log all splits.", metric: "Round times" }, a1: { type: "brick", label: "BRICK — Farmers + BBJ + Run", detail: "Gym visit. 4×(farmers carry 40m + 10 box jumps + 400m run at 8:30/mi). Attack your weak stations together.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 15 burpees · 20 walking lunges · 12 jumping squats. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 15 burpees · 20 walking lunges · 12 jumping squats. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 11km — Compete", detail: "Easy, 9:00–9:30/mi. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 11km — Compete", detail: "9:30–10:00/mi. Longest run before taper. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 12, phase: 2, focus: "Peak week. Full station run-throughs. Andrew: 6mi pace test.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 6mi — TEST", detail: "Target 8:00–8:30/mi for 6 miles. Progress check vs. Week 1 baseline. Log every mile split.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength B (peak)", detail: "Gym. Deadlift 4×5 · Bent-over row 4×8 · Sandbag lunges 4×20m · Burpee broad jumps 4×10. Heaviest of the plan.", metric: "Top weight" }, a1: { type: "strength", label: "Strength B (peak)", detail: "Home/gym. Bench press 4×6 · Sandbag lunges 4×20m · Wall ball 4×25 · Box jumps 4×12.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Full Station Run-Through", detail: "Gym. Max effort continuous: ski 500m → row 500m → farmers carry 40m → sled push 12.5m → sled pull 12.5m. Timed. Race rehearsal for your stations.", metric: "Total time" }, a1: { type: "stations", label: "Full Station Run-Through", detail: "Home. Max effort continuous: sled push 12.5m → sled pull 12.5m → wall ball 30 reps → sandbag lunges 20m → box jumps 10. Timed.", metric: "Total time" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 20 burpees · 20 walking lunges · 15 air squats. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete", detail: "AMRAP 20:00: 400m run · 20 burpees · 20 walking lunges · 15 air squats. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Long Run 12km — Compete", detail: "Easy, 9:00/mi. Peak volume run. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Long Run 12km — Compete", detail: "9:30–10:00/mi. Peak long run. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  // ─── PHASE 3: PEAK + TAPER (Weeks 13–16) ──────────────────────────────────
+  {
+    week: 13, phase: 3, focus: "RACE SIMULATION. Full dress rehearsal — log every split.",
+    days: [
+      { day: "Mon", a0: { type: "strength", label: "Strength (moderate)", detail: "Gym. 80% loads. Back squat 3×5 · RDL 3×6 · Walking lunges 2×16/leg. Touch every movement.", metric: "Top weight" }, a1: { type: "run_easy", label: "Easy Run 4mi", detail: "Easy, 9:30/mi. Active recovery before race sim week.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "run_easy", label: "Easy Run 5km", detail: "Easy, 9:00–9:30/mi. Shake out the legs before the sim.", metric: "Avg pace /mi" }, a1: { type: "strength", label: "Strength (moderate)", detail: "Home/gym. 80% loads. Back squat 3×5 · Cable rows 3×8 · Wall ball 3×15. Nothing heavy.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "rest", label: "Rest / Mobility", detail: "Full recovery before simulation.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Full recovery before simulation.", metric: null } },
+      { day: "Thu", a0: { type: "run_easy", label: "Shakeout 3km", detail: "Very easy. Just moving the legs. Stay relaxed.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Shakeout 3km", detail: "Very easy treadmill. Stay relaxed.", metric: "Avg pace /mi" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Full rest before race sim.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Full rest before race sim.", metric: null } },
+      { day: "Sat", a0: { type: "race_sim", label: "🏁 FULL RACE SIM", detail: "Gym. 8×(1km run + station) at ~8:30/mi. Stations: sled push · ski erg · sled pull · sandbag lunges · farmers carry · row · ski erg · wall ball. Log every split.", metric: "Total time" }, a1: { type: "race_sim", label: "🏁 FULL RACE SIM", detail: "Home/gym. 8×(1km run + station) at ~9:00/mi. Stations: sled push · wall ball · sled pull · sandbag lunges · box jumps · row · sled push · wall ball. Log every split.", metric: "Total time" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery after sim.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery after sim.", metric: null } },
+    ],
+  },
+  {
+    week: 14, phase: 3, focus: "Sharpen. Fix what the sim exposed.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_pace", label: "Pace Run 4mi", detail: "Target 8:00/mi. Sharpening pace. Log every mile.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength (light)", detail: "Gym. 70% loads. Back squat 3×5 · RDL 3×6. Nothing heavy — protect the body.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (light)", detail: "Home. 70% loads. Back squat 3×5 · Cable rows 3×8. Light and sharp.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "brick", label: "BRICK — Weakness Fix", detail: "Gym. 3×(800m at 8:30/mi + your weakest station from the sim). Short and sharp. Fix the gap.", metric: "Round times" }, a1: { type: "brick", label: "BRICK — Weakness Fix", detail: "Home. 3×(400m treadmill at 8:30/mi + your weakest station from the sim). Attack it — race is close.", metric: "Round times" } },
+      { day: "Thu", a0: { type: "conditioning", label: "HIIT — Compete (short)", detail: "AMRAP 12:00: 200m run · 10 burpees · 10 air squats. Keep it short. Log rounds — compare with Andrew.", metric: "Rounds" }, a1: { type: "conditioning", label: "HIIT — Compete (short)", detail: "AMRAP 12:00: 200m run · 10 burpees · 10 air squats. Keep it short. Log rounds — compare with Hung.", metric: "Rounds" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Sat", a0: { type: "run_long", label: "Run 8km — Compete", detail: "Easy, 9:00–9:30/mi. Last longer run before taper. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_long", label: "Run 8km — Compete", detail: "9:30–10:00/mi. Last longer run before taper. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 15, phase: 3, focus: "Taper begins. Protect legs, stay sharp.",
+    days: [
+      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "run_easy", label: "Easy Run 3mi", detail: "Very easy, 10:00/mi. Taper — just stay loose.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "strength", label: "Strength (touch)", detail: "Gym. 60% only. Back squat 2×5 · Walking lunges 2×10/leg. Just maintaining movement.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (touch)", detail: "Home. 60% only. Back squat 2×5 · Wall ball 2×10. Just staying loose.", metric: "Top weight" } },
+      { day: "Wed", a0: { type: "stations", label: "Station Sharpener", detail: "Gym. 2 easy rounds: ski 250m · row 250m · sled push 12.5m (moderate). Stay sharp — no grinding.", metric: "Time / splits" }, a1: { type: "stations", label: "Station Sharpener", detail: "Home. 2 easy rounds: sled push 12.5m · wall ball 10 reps · sandbag lunges 10m. Keep it light.", metric: "Time / splits" } },
+      { day: "Thu", a0: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy. Just moving. No effort.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy treadmill. Taper — trust the work.", metric: "Avg pace /mi" } },
+      { day: "Fri", a0: { type: "rest", label: "Rest / Mobility", detail: "Full rest.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Full rest.", metric: null } },
+      { day: "Sat", a0: { type: "run_easy", label: "Shakeout 3km — Compete", detail: "Very easy, 9:30/mi. Last training run. Log pace — compare with Andrew.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Shakeout 3km — Compete", detail: "Very easy, 10:00/mi. Last training run. Log pace — compare with Hung.", metric: "Avg pace /mi" } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+    ],
+  },
+  {
+    week: 16, phase: 3, focus: "RACE WEEK. Protect the legs. Trust the work.",
+    days: [
+      { day: "Mon", a0: { type: "run_easy", label: "Shakeout 2km", detail: "Very easy. Legs only. Stay relaxed.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Shakeout 2km", detail: "Very easy treadmill. Stay loose.", metric: "Avg pace /mi" } },
+      { day: "Tue", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
+      { day: "Wed", a0: { type: "run_easy", label: "Shakeout 2km", detail: "Very easy. Last movement before race.", metric: "Avg pace /mi" }, a1: { type: "run_easy", label: "Shakeout 2km", detail: "Very easy. Last movement before race.", metric: "Avg pace /mi" } },
+      { day: "Thu", a0: { type: "rest", label: "Rest / Mobility", detail: "Rest. Eat well, sleep well, arrive ready.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Rest. Eat well, sleep well, arrive ready.", metric: null } },
+      { day: "Fri", a0: { type: "race_sim", label: "🏁 RACE DAY — Anaheim", detail: "Run together at ~8:00–8:30/mi. Hung leads: ski, row, farmers, sled pull. Andrew leads: wall balls, BBJ, sandbag. Sled push — split 50/50. Clean transitions. Trust the plan.", metric: "RACE TIME" }, a1: { type: "race_sim", label: "🏁 RACE DAY — Anaheim", detail: "Run together at ~8:00–8:30/mi. Andrew leads: wall balls, BBJ, sandbag. Hung leads: ski, row, farmers. Sled push — 50/50. You've done the work. Race your race.", metric: "RACE TIME" } },
+      { day: "Sat", a0: { type: "rest", label: "Rest / Recovery", detail: "You earned it.", metric: null }, a1: { type: "rest", label: "Rest / Recovery", detail: "You earned it.", metric: null } },
+      { day: "Sun", a0: { type: "rest", label: "Rest / Recovery", detail: "You earned it.", metric: null }, a1: { type: "rest", label: "Rest / Recovery", detail: "You earned it.", metric: null } },
     ],
   },
   {
@@ -545,7 +729,14 @@ export default function HyroxTrainingApp() {
   // Day → this athlete's entry. Relay athletes (idx 2,3) fall back to a0.
   const entryFor = (day) => day[`a${athleteIdx}`] || day.a0;
 
-  const startISO = (cfg.startOptions.find(o => o.id === startId) || cfg.startOptions[0]).iso;
+  // Auto-calculate plan start: count back cfg.weeks*7 days from race, snap to Monday.
+  const startISO = (() => {
+    const d = new Date(cfg.raceISO);
+    d.setDate(d.getDate() - cfg.weeks * 7);
+    const dow = d.getDay();
+    if (dow !== 1) d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    return d.toISOString().split("T")[0];
+  })();
   const planWeeks = weekPlan.slice(0, cfg.weeks);
   const weekData = planWeeks.find(w => w.week === selectedWeek) || planWeeks[0];
   const myLogs = logs[athleteIdx] || {};
@@ -737,17 +928,6 @@ export default function HyroxTrainingApp() {
           )}
           {a.pace ? <div style={{ fontSize: 11, color: T.body, marginBottom: 10 }}>📌 {a.pace}</div> : null}
 
-          {selectedWeek === 1 && cfg.startOptions.length > 0 && (
-            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 9, color: T.faint, textTransform: "uppercase", letterSpacing: "0.1em" }}>Plan start:</span>
-              {cfg.startOptions.map(o => (
-                <button key={o.id} onClick={() => changeStart(o.id)} style={{
-                  background: startId === o.id ? T.border : "none", border: `1px solid ${startId === o.id ? a.color : T.border2}`,
-                  color: startId === o.id ? a.color : T.dim, borderRadius: 12, padding: "3px 10px", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                }}>{o.label}</button>
-              ))}
-            </div>
-          )}
 
           {weeklyQuotes[selectedWeek] && (
             <div style={{ fontSize: 12, fontStyle: "italic", color: T.body, marginBottom: 10, lineHeight: 1.5 }}>
