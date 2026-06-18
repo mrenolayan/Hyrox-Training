@@ -264,6 +264,12 @@ const splitStrategy = [
 // ── STORAGE ───────────────────────────────────────────────────────────────────
 // ── localStorage shim (standalone Vercel deployment) ──
 // Saves data directly on this device/browser. No account, no login.
+// ── PER-CLIENT STORAGE NAMESPACE ──────────────────────────────────────────────
+// NOTE: Storage keys in this file are hardcoded as "hyrox-dc-*" for backwards
+// compatibility. PLAN_ID is defined here for identification only — do NOT wire
+// it into the storage keys without first migrating existing Supabase data.
+const PLAN_ID = "team-walker-dc";
+
 // ── Supabase-backed shared storage ──
 // Reads/writes go to a shared online database so Reece, Samantha, and the coach
 // all see the same data. Requires a free Supabase project — see SETUP.md.
