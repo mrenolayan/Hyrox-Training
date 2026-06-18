@@ -1,0 +1,18 @@
+{
+  "name": "hyrox-trainer",
+  "version": "1.0.0",
+  "description": "Hyrox training app — config-driven, deploy to Vercel",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.2"
+  }
+}
