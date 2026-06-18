@@ -97,34 +97,34 @@ const ATHLETE_COLORS = ["#60a5fa", "#6ee7b7", "#f0a0b4", "#f0c020"];
 //  CLIENT  — edit this block per client. Everything in the UI reads from here.
 // ════════════════════════════════════════════════════════════════════════════
 const CLIENT = {
-  teamName: "TEAM WALKER",                 // big title; "" = auto from athlete names
-  tagline: "run together, win together",
-  formatId: "mixed_doubles",               // key from FORMATS
-  raceName: "Amazfit HYROX Washington D.C.",
-  raceCity: "Washington D.C.",
-  raceISO: "2026-09-03T07:00:00",          // drives countdown + week labels
-  weeks: 12,                                // 8, 12, or 16
-  defaultUnits: "us",                       // "us" (lb/mi) or "metric" (kg/km)
+  teamName: "TEAM HUNG & ANDREW",          // big title; "" = auto from athlete names
+  tagline: "train together, race together",
+  formatId: "doubles_men",                 // key from FORMATS
+  raceName: "HYROX Anaheim",
+  raceCity: "Anaheim",
+  raceISO: "2026-12-04T07:00:00",          // drives countdown + week labels
+  weeks: 16,                               // 8, 12, or 16 (both athletes want 20 — extend weekPlan when ready)
+  defaultUnits: "us",                      // "us" (lb/mi) or "metric" (kg/km)
   startOptions: [
-    { id: "jun15", label: "Start Mon Jun 15", iso: "2026-06-15" },
-    { id: "jun22", label: "Start Mon Jun 22", iso: "2026-06-22" },
+    { id: "aug18", label: "Start Mon Aug 18", iso: "2026-08-18" },
+    { id: "aug25", label: "Start Mon Aug 25", iso: "2026-08-25" },
   ],
   // One entry per athlete. Color auto-fills if omitted.
   athletes: [
-    { name: "Athlete 1", role: "Power lead · heavy stations", pace: "Race pace 6:15–6:30/km (hold back!)" },
-    { name: "Athlete 2", role: "Pace lead · machines",        pace: "Race pace = your pace. Build the engine." },
+    { name: "Hung",   role: "Power lead · Ski, Row, Farmers, Sled Pull", pace: "Current pace 8:30/mi — hold to team pace in group runs." },
+    { name: "Andrew", role: "Pace lead · Wall Balls, BBJ, Running",      pace: "Target team pace ~9:00–9:30/mi. You set the tempo." },
   ],
   // Plan phases shown on the Overview tab.
   phases: [
-    { id: 1, name: "Base",         weeks: "1–4",   dates: "Weeks 1–4",   color: "#3b82f6", goal: "Build the aerobic engine, get under the sled, practice pacing together." },
-    { id: 2, name: "Build",        weeks: "5–9",   dates: "Weeks 5–9",   color: "#f0c020", goal: "Hyrox-specific bricks. Stations under fatigue. Lock in rep splits." },
-    { id: 3, name: "Peak + Taper", weeks: "10–12", dates: "Weeks 10–12", color: "#f87171", goal: "Race simulation, sharpen, taper. Arrive fresh on race day." },
+    { id: 1, name: "Base",         weeks: "1–5",   dates: "Weeks 1–5",   color: "#3b82f6", goal: "Build aerobic base, establish team pace, introduce station technique — especially sled push for both." },
+    { id: 2, name: "Build",        weeks: "6–12",  dates: "Weeks 6–12",  color: "#f0c020", goal: "Hyrox-specific bricks. Sled push development. Lock in rep splits and transitions." },
+    { id: 3, name: "Peak + Taper", weeks: "13–16", dates: "Weeks 13–16", color: "#f87171", goal: "Race simulation, sharpen weak spots, taper. Arrive fresh on race day." },
   ],
 };
 
 // ── PER-CLIENT STORAGE NAMESPACE ───────────────────────────────────────────────
 // Unique per published client so logs/notes never collide in the shared database.
-const PLAN_ID = "team-walker-dc";
+const PLAN_ID = "team-hung-andrew-anaheim";
 
 const palettes = {
   dark: {
@@ -421,16 +421,18 @@ const weekPlan = [
   },
 ];
 
-// Generic station split strategy — references Athlete 1 / Athlete 2.
+// Station split strategy personalised from intake forms.
+// Hung: strong at Ski, Row, Farmers. Weak: Sled Push. Okay: Sled Pull, BBJ, Sandbag, WB.
+// Andrew: okay at Row & Running. Weak spot: everything else — especially sled push.
 const splitStrategy = [
-  { station: "Sled Push (152kg)",     lead: "Athlete 1 ~70%",    note: "Stronger athlete leads; partner relieves when needed. Both train it." },
-  { station: "Sled Pull (103kg)",     lead: "Athlete 1 ~70%",    note: "Same model — one grinds, the other gives recovery windows." },
-  { station: "Sandbag Lunges (20kg)", lead: "Athlete 1 ~60%",    note: "Stronger athlete takes the bigger share. Pass sideways/back only." },
-  { station: "Wall Balls (6kg)",      lead: "Athlete 2 ~60%",    note: "Lead in big sets, partner covers the rest." },
-  { station: "Burpee Broad Jumps",    lead: "Athlete 2 ~60%",    note: "One athlete's strength — but both still train and share them." },
-  { station: "Farmers Carry (2×24kg)", lead: "Even",             note: "~50/50. No forward passing." },
-  { station: "SkiErg (1000m)",        lead: "Athlete 2 50–60%",  note: "Take a touch more so the sled lead recovers." },
-  { station: "Row (1000m)",           lead: "Athlete 2 50–60%",  note: "Same — machines buy the sled lead recovery." },
+  { station: "Sled Push (152kg)",      lead: "Even — #1 priority",  note: "Both rated this as a weak spot. Biggest training focus. Alternate every 12.5m, keep form tight, don't ego-push." },
+  { station: "Sled Pull (103kg)",      lead: "Hung ~65%",            note: "Hung is okay, Andrew is weak — Hung leads. Andrew must develop this in training to give Hung recovery windows." },
+  { station: "Sandbag Lunges (20kg)",  lead: "Hung ~60%",            note: "Hung is okay, Andrew is weak — Hung carries the bigger share. Pass sideways, never forward." },
+  { station: "Wall Balls (6kg)",       lead: "Andrew ~60%",          note: "Andrew's primary station to own. Hung covers the rest. Andrew: build big unbroken sets in training." },
+  { station: "Burpee Broad Jumps",     lead: "Andrew ~55%",          note: "Both rated okay — Andrew leads to let Hung recover for machines. Keep a steady rhythm, don't sprint." },
+  { station: "Farmers Carry (2×24kg)", lead: "Hung ~65%",            note: "Hung is strong here, Andrew is weak. Hung leads, no forward passing. Andrew focuses on grip and posture." },
+  { station: "SkiErg (1000m)",         lead: "Hung ~70%",            note: "Hung's biggest strength, Andrew's biggest weak spot. Hung leads hard, Andrew relieves in short bursts." },
+  { station: "Row (1000m)",            lead: "Even",                 note: "Best shared station — Hung is strong, Andrew is okay. Split ~50/50 and use it as a mutual recovery." },
 ];
 
 // ── STORAGE (Supabase-backed shared KV; falls back silently on error) ─────────
