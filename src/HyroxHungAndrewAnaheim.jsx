@@ -445,12 +445,12 @@ const weekPlan = [
     ],
   },
   {
-    week: 15, phase: 3, focus: "Taper. Very light. Strength Tue · Station Sharpener Wed · Easy Run Thu · Easy Run Fri · Shakeout Sat.",
+    week: 15, phase: 3, focus: "Taper. Very light. Strength Mon · Station Sharpener Tue · Easy Run Wed · Rest Thu · Easy Run Fri · Shakeout Sat.",
     days: [
-      { day: "Mon", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
-      { day: "Tue", a0: { type: "strength", label: "Strength (touch)", detail: "Gym. 60% only. Back squat 2×5 · Walking lunges 2×10/leg. Just maintaining movement.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (touch)", detail: "Home. 60% only. Back squat 2×5 · Wall ball 2×10. Just staying loose.", metric: "Top weight" } },
-      { day: "Wed", a0: { type: "stations", label: "Station Sharpener", detail: "Gym. 2 easy rounds: ski 250m · row 250m · sled push 12.5m (moderate). Stay sharp — no grinding.", metric: "Time / splits" }, a1: { type: "stations", label: "Station Sharpener", detail: "Home. 2 easy rounds: sled push 12.5m · wall ball 10 reps · sandbag lunges 10m. Keep it light.", metric: "Time / splits" } },
-      { day: "Thu", a0: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy. Just moving. No effort.", metric: "Avg pace /mi or /km" }, a1: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy treadmill. Taper — trust the work.", metric: "Avg pace /mi or /km" } },
+      { day: "Mon", a0: { type: "strength", label: "Strength (touch)", detail: "Gym. 60% only. Back squat 2×5 · Walking lunges 2×10/leg. Just maintaining movement.", metric: "Top weight" }, a1: { type: "strength", label: "Strength (touch)", detail: "Home. 60% only. Back squat 2×5 · Wall ball 2×10. Just staying loose.", metric: "Top weight" } },
+      { day: "Tue", a0: { type: "stations", label: "Station Sharpener", detail: "Gym. 2 easy rounds: ski 250m · row 250m · sled push 12.5m (moderate). Stay sharp — no grinding.", metric: "Time / splits" }, a1: { type: "stations", label: "Station Sharpener", detail: "Home. 2 easy rounds: sled push 12.5m · wall ball 10 reps · sandbag lunges 10m. Keep it light.", metric: "Time / splits" } },
+      { day: "Wed", a0: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy. Just moving. No effort.", metric: "Avg pace /mi or /km" }, a1: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy treadmill. Taper — trust the work.", metric: "Avg pace /mi or /km" } },
+      { day: "Thu", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
       { day: "Fri", a0: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy, 9:30/mi. Taper — last easy run before the shakeout.", metric: "Avg pace /mi or /km" }, a1: { type: "run_easy", label: "Easy Run 3km", detail: "Very easy, 10:00/mi. Taper — stay loose.", metric: "Avg pace /mi or /km" } },
       { day: "Sat", a0: { type: "run_easy", label: "Shakeout 5km", detail: "Very easy, 9:30/mi. Last training run. Log pace.", metric: "Avg pace /mi or /km" }, a1: { type: "run_easy", label: "Shakeout 5km", detail: "Very easy, 10:00/mi. Last training run. Log pace.", metric: "Avg pace /mi or /km" } },
       { day: "Sun", a0: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null }, a1: { type: "rest", label: "Rest / Mobility", detail: "Recovery.", metric: null } },
