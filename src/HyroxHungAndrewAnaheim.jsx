@@ -544,6 +544,9 @@ export default function HyroxTrainingApp() {
   const [noteDraft, setNoteDraft] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [editingNames, setEditingNames] = useState(false);
+  const [workoutOverrides, setWorkoutOverrides] = useState({});
+  const [editingWorkout, setEditingWorkout] = useState(null);
+  const [workoutDraft, setWorkoutDraft] = useState({ label: "", detail: "", metric: "" });
 
   useEffect(() => {
     if (!showCountdown) return;
@@ -557,6 +560,7 @@ export default function HyroxTrainingApp() {
       try { const r = await storage.get(`hyrox-${PLAN_ID}-theme`); if (r?.value && ["auto","light","dark"].includes(r.value)) setThemeMode(r.value); } catch (e) {}
       try { const r = await storage.get(`hyrox-${PLAN_ID}-units`); if (r?.value && ["us","metric"].includes(r.value)) setUnits(r.value); } catch (e) {}
       try { const r = await storage.get(`hyrox-${PLAN_ID}-coach-notes`); if (r?.value) setCoachNotes(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await storage.get(`hyrox-${PLAN_ID}-workout-overrides`); if (r?.value) setWorkoutOverrides(JSON.parse(r.value)); } catch (e) {}
       try { const r = await storage.get(`hyrox-${PLAN_ID}-start`); if (r?.value) setStartId(r.value); } catch (e) {}
       try { const r = await storage.get(`hyrox-${PLAN_ID}-cfg`); if (r?.value) setCfg(JSON.parse(r.value)); } catch (e) {}
       const next = {};
@@ -579,6 +583,19 @@ export default function HyroxTrainingApp() {
     const updated = { ...coachNotes, [week]: noteDraft };
     setCoachNotes(updated); setEditingNote(false);
     try { await storage.set(`hyrox-${PLAN_ID}-coach-notes`, JSON.stringify(updated)); } catch (e) {}
+  };
+  const saveWorkoutOverride = async (key) => {
+    const athOverrides = { ...(workoutOverrides[athleteIdx] || {}), [key]: { ...workoutDraft } };
+    const updated = { ...workoutOverrides, [athleteIdx]: athOverrides };
+    setWorkoutOverrides(updated); setEditingWorkout(null);
+    try { await storage.set(`hyrox-${PLAN_ID}-workout-overrides`, JSON.stringify(updated)); } catch (e) {}
+  };
+  const resetWorkoutOverride = async (key) => {
+    const athOverrides = { ...(workoutOverrides[athleteIdx] || {}) };
+    delete athOverrides[key];
+    const updated = { ...workoutOverrides, [athleteIdx]: athOverrides };
+    setWorkoutOverrides(updated); setEditingWorkout(null);
+    try { await storage.set(`hyrox-${PLAN_ID}-workout-overrides`, JSON.stringify(updated)); } catch (e) {}
   };
 
   const resolvedTheme = themeMode === "auto" ? autoTheme() : themeMode;
@@ -845,9 +862,13 @@ export default function HyroxTrainingApp() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {weekData.days.map((d) => {
-                    const s = entryFor(d); const st = sessionTypes[s.type] || sessionTypes.rest;
+                    const baseS = entryFor(d);
+                    const myOverride = (workoutOverrides[athleteIdx] || {})[`w${weekData.week}-${d.day}`];
+                    const s = myOverride ? { ...baseS, ...myOverride } : baseS;
+                    const st = sessionTypes[s.type] || sessionTypes.rest;
                     const key = `w${weekData.week}-${d.day}`; const entry = myLogs[key];
                     const isOpen = openLog === key; const isRest = s.type === "rest";
+                    const isEditingThisWorkout = editingWorkout === key;
                     const detailText = annotateStationWeights(s.detail, units);
                     const metricLabel = unitizeMetricLabel(s.metric, units);
                     return (
@@ -858,7 +879,12 @@ export default function HyroxTrainingApp() {
                             <div style={{ fontSize: 17, marginTop: 2 }}>{st.icon}</div>
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: st.color }}>{s.label}{d.optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}{d.shared && fmt.team && !d.optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: st.color }}>
+                              {s.label}
+                              {d.optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}
+                              {d.shared && fmt.team && !d.optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}
+                              {myOverride && <span style={{ fontSize: 9, color: T.dim, marginLeft: 6, fontWeight: 600 }}>EDITED</span>}
+                            </div>
                             <div style={{ fontSize: 11.5, color: T.body, marginTop: 3, lineHeight: 1.5 }}>{detailText}</div>
                             {entry?.metric && <div style={{ fontSize: 11, color: st.color, marginTop: 5, fontWeight: 600 }}>📊 {entry.metric}{entry.notes ? ` — ${entry.notes}` : ""}</div>}
                           </div>
@@ -866,20 +892,32 @@ export default function HyroxTrainingApp() {
                             <button onClick={() => toggleDone(key)} aria-label="Mark complete" style={{ width: 26, height: 26, borderRadius: 13, flexShrink: 0, cursor: "pointer", background: entry?.done ? st.color : "transparent", border: `2px solid ${entry?.done ? st.color : T.border2}`, color: "#07070e", fontSize: 13, fontWeight: 900, lineHeight: 1 }}>{entry?.done ? "✓" : ""}</button>
                           )}
                         </div>
-                        {!isRest && s.metric && (
-                          <div style={{ marginTop: 8 }}>
-                            {!isOpen ? (
+                        {isEditingThisWorkout ? (
+                          <div style={{ marginTop: 10, borderTop: `1px solid ${T.border}`, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                            <input value={workoutDraft.label} onChange={e => setWorkoutDraft(p => ({ ...p, label: e.target.value }))} placeholder="Workout title" style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
+                            <textarea value={workoutDraft.detail} onChange={e => setWorkoutDraft(p => ({ ...p, detail: e.target.value }))} placeholder="Detail / instructions" rows={4} style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+                            <input value={workoutDraft.metric} onChange={e => setWorkoutDraft(p => ({ ...p, metric: e.target.value }))} placeholder="Log metric label (e.g. Rounds, Total time)" style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button onClick={() => saveWorkoutOverride(key)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                              {myOverride && <button onClick={() => resetWorkoutOverride(key)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Reset to default</button>}
+                              <button onClick={() => setEditingWorkout(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : isOpen ? (
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                            <input value={draft.metric} onChange={e => setDraft(p => ({ ...p, metric: e.target.value }))} placeholder={metricLabel} style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
+                            <input value={draft.notes} onChange={e => setDraft(p => ({ ...p, notes: e.target.value }))} placeholder="Notes (optional)" style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => submitLog(key)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                              <button onClick={() => setOpenLog(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {!isRest && s.metric && (
                               <button onClick={() => { setOpenLog(key); setDraft({ metric: entry?.metric || "", notes: entry?.notes || "" }); }} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.body, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{entry?.metric ? "Edit log" : `Log: ${metricLabel}`}</button>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <input value={draft.metric} onChange={e => setDraft(p => ({ ...p, metric: e.target.value }))} placeholder={metricLabel} style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
-                                <input value={draft.notes} onChange={e => setDraft(p => ({ ...p, notes: e.target.value }))} placeholder="Notes (optional)" style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <button onClick={() => submitLog(key)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                                  <button onClick={() => setOpenLog(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
-                                </div>
-                              </div>
                             )}
+                            <button onClick={() => { setEditingWorkout(key); setWorkoutDraft({ label: s.label, detail: s.detail || "", metric: s.metric || "" }); }} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>✏ Edit workout</button>
                           </div>
                         )}
                       </div>
