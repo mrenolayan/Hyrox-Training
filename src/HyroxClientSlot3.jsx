@@ -97,7 +97,7 @@ const ATHLETE_COLORS = ["#60a5fa", "#6ee7b7", "#f0a0b4", "#f0c020"];
 //  CLIENT  — edit this block per client. Everything in the UI reads from here.
 // ════════════════════════════════════════════════════════════════════════════
 const CLIENT = {
-  teamName: "TEAM WALKER",                 // big title; "" = auto from athlete names
+  teamName: "TEAM HYROX",                  // big title; "" = auto from athlete names
   tagline: "run together, win together",
   formatId: "mixed_doubles",               // key from FORMATS
   raceName: "Amazfit HYROX Washington D.C.",
@@ -421,16 +421,16 @@ const weekPlan = [
   },
 ];
 
-// Generic station split strategy — references Athlete 1 / Athlete 2.
+// Generic station split strategy in HYROX race order — references Athlete 1 / Athlete 2.
 const splitStrategy = [
-  { station: "Sled Push (152kg)",     lead: "Athlete 1 ~70%",    note: "Stronger athlete leads; partner relieves when needed. Both train it." },
-  { station: "Sled Pull (103kg)",     lead: "Athlete 1 ~70%",    note: "Same model — one grinds, the other gives recovery windows." },
-  { station: "Sandbag Lunges (20kg)", lead: "Athlete 1 ~60%",    note: "Stronger athlete takes the bigger share. Pass sideways/back only." },
-  { station: "Wall Balls (6kg)",      lead: "Athlete 2 ~60%",    note: "Lead in big sets, partner covers the rest." },
-  { station: "Burpee Broad Jumps",    lead: "Athlete 2 ~60%",    note: "One athlete's strength — but both still train and share them." },
-  { station: "Farmers Carry (2×24kg)", lead: "Even",             note: "~50/50. No forward passing." },
-  { station: "SkiErg (1000m)",        lead: "Athlete 2 50–60%",  note: "Take a touch more so the sled lead recovers." },
-  { station: "Row (1000m)",           lead: "Athlete 2 50–60%",  note: "Same — machines buy the sled lead recovery." },
+  { station: "Ski Erg 1000m",                lead: "Athlete 2 50–60%",  note: "Take a touch more so the sled lead recovers." },
+  { station: "Sled Push 50m · 152kg",        lead: "Athlete 1 ~70%",    note: "Stronger athlete leads; partner relieves when needed. Both train it." },
+  { station: "Sled Pull 50m · 103kg",        lead: "Athlete 1 ~70%",    note: "Same model — one grinds, the other gives recovery windows." },
+  { station: "Burpee Broad Jumps 80m",       lead: "Athlete 2 ~60%",    note: "One athlete's strength — but both still train and share them." },
+  { station: "Row 1000m",                    lead: "Athlete 2 50–60%",  note: "Machines buy the sled lead recovery." },
+  { station: "Farmers Carry 200m · 2×24kg", lead: "Even",              note: "~50/50. No forward passing." },
+  { station: "Sandbag Lunges 100m · 20kg",  lead: "Athlete 1 ~60%",    note: "Stronger athlete takes the bigger share. Pass sideways/back only." },
+  { station: "Wall Balls 100 reps · 6kg",   lead: "Athlete 2 ~60%",    note: "Lead in big sets, partner covers the rest." },
 ];
 
 // ── STORAGE (Supabase-backed shared KV; falls back silently on error) ─────────
