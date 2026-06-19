@@ -200,7 +200,7 @@ const STATION_WEIGHTS_KG = [152, 103, 24, 20, 6];
 const unitizeMetricLabel = (label, units) => {
   if (!label) return label;
   // pace labels
-  if (/\/km/i.test(label)) return units === "us" ? label.replace(/\/km/gi, "/mi") : label;
+  if (/\/km/i.test(label) && !/\/mi/i.test(label)) return units === "us" ? label.replace(/\/km/gi, "/mi") : label;
   // generic weight prompts ("Top weight", "Push/pull weights")
   return label;
 };
