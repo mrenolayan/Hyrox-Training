@@ -251,14 +251,14 @@ const weekPlan = [
 ];
 
 const splitStrategy = [
-  { station: "Sled Push (152kg)", lead: "Reece ~70%", note: "He leads, Samantha relieves when he needs a breather. Both train it." },
-  { station: "Sled Pull (103kg)", lead: "Reece ~70%", note: "Same model — he grinds, she gives him recovery windows." },
-  { station: "Sandbag Lunges (20kg)", lead: "Reece ~60%", note: "He takes the bigger share. Pass sideways/back only." },
-  { station: "Wall Balls (6kg)", lead: "Samantha ~60%", note: "She leads in big sets, he covers the rest." },
-  { station: "Burpee Broad Jumps", lead: "Samantha ~60%", note: "Her strength — but he still trains and shares them." },
-  { station: "Farmers Carry (2×24kg)", lead: "Even", note: "~50/50. No forward passing." },
-  { station: "SkiErg (1000m)", lead: "Samantha 50–60%", note: "She takes a touch more so Reece recovers for the sleds." },
-  { station: "Row (1000m)", lead: "Samantha 50–60%", note: "Same — machines are her recovery gift to him." },
+  { station: "Ski Erg 1000m", lead: "Samantha 50–60%", note: "She takes a touch more so Reece recovers for the sleds." },
+  { station: "Sled Push 50m (152kg)", lead: "Reece ~70%", note: "He leads, Samantha relieves when he needs a breather. Both train it." },
+  { station: "Sled Pull 50m (103kg)", lead: "Reece ~70%", note: "Same model — he grinds, she gives him recovery windows." },
+  { station: "Burpee Broad Jumps 80m", lead: "Samantha ~60%", note: "Her strength — but he still trains and shares them." },
+  { station: "Row 1000m", lead: "Samantha 50–60%", note: "Machines are her recovery gift to him." },
+  { station: "Farmers Carry 200m (2×24kg)", lead: "Even", note: "~50/50. No forward passing." },
+  { station: "Sandbag Lunges 100m (20kg)", lead: "Reece ~60%", note: "He takes the bigger share. Pass sideways/back only." },
+  { station: "Wall Balls 100 reps (6kg)", lead: "Samantha ~60%", note: "She leads in big sets, he covers the rest." },
 ];
 
 // ── STORAGE ───────────────────────────────────────────────────────────────────
