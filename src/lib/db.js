@@ -177,6 +177,66 @@ export async function upsertPlanEntries(entries) {
     .select());
 }
 
+// ── write: create a full team with athletes + plan in one shot (intake form) ───
+export async function createTeamFull({
+  coachId, teamName, formatId, teamUnits, planWeeks, planDaysPerWeek,
+  startISO, raceName, raceCity, raceISO, athletes,
+}) {
+  const teamRows = unwrap("createTeam", await supabase
+    .from("teams")
+    .insert({ coach_id: coachId, name: teamName, format_id: formatId, units: teamUnits })
+    .select());
+  const team = teamRows[0];
+
+  const planRows = unwrap("createPlan", await supabase
+    .from("plans")
+    .insert({
+      team_id: team.id, weeks: planWeeks, days_per_week: planDaysPerWeek,
+      start_iso: startISO, race_name: raceName, race_city: raceCity, race_iso: raceISO,
+      status: "draft",
+    })
+    .select());
+  const plan = planRows[0];
+
+  const athleteRows = [];
+  for (const a of athletes) {
+    const aRows = unwrap("createAthlete", await supabase
+      .from("athletes")
+      .insert({
+        coach_id: coachId, name: a.name, color: a.color ?? "#60a5fa",
+        role: a.role ?? null, run_pace: a.run_pace ?? null, longest_run: a.longest_run ?? null,
+      })
+      .select());
+    const athlete = aRows[0];
+
+    if (a.profile) {
+      const profileData = Object.fromEntries(Object.entries(a.profile).filter(([, v]) => v != null));
+      if (Object.keys(profileData).length) {
+        await supabase.from("athlete_profiles").insert({ athlete_id: athlete.id, ...profileData });
+      }
+    }
+    if (a.ratings?.length) {
+      await supabase.from("station_ratings").insert(
+        a.ratings.map((r) => ({ athlete_id: athlete.id, station: r.station, rating: r.rating }))
+      );
+    }
+    if (a.modalities?.length) {
+      await supabase.from("athlete_modalities").insert(
+        a.modalities.map((m) => ({ athlete_id: athlete.id, modality: m }))
+      );
+    }
+    await supabase.from("team_members").insert({ team_id: team.id, athlete_id: athlete.id });
+
+    athleteRows.push({
+      ...athlete,
+      station_ratings: a.ratings ?? [],
+      athlete_profiles: a.profile ?? null,
+    });
+  }
+
+  return { team, plan, athletes: athleteRows };
+}
+
 // ── write: persist an entire generated plan tree ───────────────────────────────
 // Accepts the output of generatePlan() and upserts weeks → days → entries.
 // Requires migration 0002 (unique constraints on plan_weeks and plan_days).
