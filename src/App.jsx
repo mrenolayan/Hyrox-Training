@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as db from "./lib/db.js";
 import { generatePlan } from "./lib/plan.js";
+import { getSession, onAuthStateChange, sendMagicLink, signOut } from "./lib/auth.js";
 
 // ── Phase 2/3 smoke UI: coach dashboard + plan generator wired to live DB. ──────
 // Minimal styling on purpose — the polished UI (tabs/theme/countdown) lands in
@@ -13,6 +14,7 @@ const T = {
 const PHASE_NAME = { 1: "Base", 2: "Build", 3: "Peak + Taper" };
 
 export default function App() {
+  const [session, setSession] = useState(undefined); // undefined=auth loading, null=logged out
   const [coach, setCoach] = useState(null);
   const [teams, setTeams] = useState([]);
   const [openTeam, setOpenTeam] = useState(null); // { team, plan }
@@ -21,16 +23,27 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
+  // Auth: get initial session, then subscribe to changes (magic link callback lands here)
   useEffect(() => {
+    getSession().then(setSession).catch(() => setSession(null));
+    return onAuthStateChange(setSession);
+  }, []);
+
+  // Dashboard: load once we have a session
+  useEffect(() => {
+    if (!session) return;
+    setLoading(true);
     (async () => {
       try {
+        // Link coaches.user_id if not yet set (idempotent, safe pre-RLS)
+        await db.linkCoachAuthId(session.user.id, session.user.email);
         const c = await db.getCoach();
         setCoach(c);
         if (c) setTeams(await db.getTeamsForCoach(c.id));
       } catch (e) { setError(e.message); }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [session]);
 
   async function openTeamPlan(team) {
     setError(null); setWeek(1);
@@ -47,7 +60,6 @@ export default function App() {
       const generated = generatePlan(team, plan, athletes);
       const counts = await db.savePlanTree(plan.id, generated.weeks);
       console.log("savePlanTree counts:", counts);
-      // Reload the plan tree from DB so the UI reflects what was saved
       const fresh = await db.getPlanForTeam(team.id);
       setOpenTeam({ team, plan: fresh });
       setWeek(1);
@@ -55,9 +67,17 @@ export default function App() {
     finally { setGenerating(false); }
   }
 
-  if (loading) return <Shell><p style={{ color: T.dim }}>Loading…</p></Shell>;
-  if (error) return <Shell><p style={{ color: "#f87171" }}>Error: {error}</p></Shell>;
+  // ── auth loading (before session is known) ────────────────────────────────
+  if (session === undefined) return <Shell><p style={{ color: T.dim }}>Loading…</p></Shell>;
 
+  // ── not logged in ─────────────────────────────────────────────────────────
+  if (!session) return <LoginScreen />;
+
+  // ── data loading ──────────────────────────────────────────────────────────
+  if (loading) return <Shell><p style={{ color: T.dim }}>Loading…</p></Shell>;
+  if (error)   return <Shell><p style={{ color: "#f87171" }}>Error: {error}</p></Shell>;
+
+  // ── team detail view ──────────────────────────────────────────────────────
   if (openTeam) {
     const { team, plan } = openTeam;
     const weeks = (plan?.plan_weeks ?? []).sort((a, b) => a.week_number - b.week_number);
@@ -135,10 +155,16 @@ export default function App() {
     );
   }
 
+  // ── dashboard ─────────────────────────────────────────────────────────────
   return (
     <Shell>
-      <div style={{ color: T.faint, fontSize: 12, textTransform: "uppercase", letterSpacing: ".12em" }}>
-        Coach dashboard
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ color: T.faint, fontSize: 12, textTransform: "uppercase", letterSpacing: ".12em" }}>
+          Coach dashboard
+        </div>
+        <button onClick={() => signOut()} style={{ ...btn, fontSize: 11, padding: "3px 8px" }}>
+          Sign out
+        </button>
       </div>
       <h1 style={{ margin: "4px 0 16px", fontSize: 26 }}>{coach?.name ?? "—"}'s athletes</h1>
       {teams.map((team) => {
@@ -161,6 +187,71 @@ export default function App() {
           </button>
         );
       })}
+    </Shell>
+  );
+}
+
+// ── login screen ───────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [email, setEmail] = useState("mrenolayan@gmail.com");
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function handleSend() {
+    setErr(null); setSending(true);
+    try {
+      await sendMagicLink(email);
+      setSent(true);
+    } catch (e) { setErr(e.message); }
+    finally { setSending(false); }
+  }
+
+  if (sent) {
+    return (
+      <Shell>
+        <div style={{ maxWidth: 340, margin: "60px auto", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>📬</div>
+          <p style={{ color: T.dim }}>Magic link sent to <strong style={{ color: T.text }}>{email}</strong>.</p>
+          <p style={{ color: T.faint, fontSize: 13 }}>Check your inbox and click the link to sign in.</p>
+        </div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <div style={{ maxWidth: 340, margin: "60px auto" }}>
+        <div style={{ color: T.faint, fontSize: 12, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 8 }}>
+          Hyrox Trainer
+        </div>
+        <h1 style={{ margin: "0 0 24px", fontSize: 26 }}>Coach login</h1>
+        <label style={{ display: "block", color: T.dim, fontSize: 12, marginBottom: 6 }}>Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          style={{
+            display: "block", width: "100%", boxSizing: "border-box",
+            background: T.inset, border: `1px solid ${T.border}`, borderRadius: 8,
+            color: T.text, fontSize: 15, padding: "10px 12px", marginBottom: 12,
+            outline: "none", fontFamily: "inherit",
+          }}
+        />
+        <button
+          onClick={handleSend}
+          disabled={sending || !email}
+          style={{
+            ...btn, display: "block", width: "100%", padding: "10px 0",
+            borderColor: T.accent, color: T.accent, fontSize: 14,
+            opacity: (sending || !email) ? 0.5 : 1,
+          }}
+        >
+          {sending ? "Sending…" : "Send magic link"}
+        </button>
+        {err && <p style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{err}</p>}
+      </div>
     </Shell>
   );
 }

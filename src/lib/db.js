@@ -18,9 +18,22 @@ function unwrap(label, { data, error }) {
 
 // ── coaches ──────────────────────────────────────────────────────────────────
 export async function getCoach() {
-  // single-coach app for now: return the first coach
+  // Once RLS is enabled, this naturally returns only the authenticated coach's row.
+  // Pre-RLS it returns the first coach (fine for single-coach dev).
   const rows = unwrap("getCoach", await supabase.from("coaches").select("*").limit(1));
   return rows[0] ?? null;
+}
+
+// Link coaches.user_id to the Supabase auth user on first magic-link login.
+// Idempotent: the IS NULL guard makes repeated calls safe.
+// Must be called BEFORE 0003_rls.sql is applied (anon key has write access pre-RLS).
+export async function linkCoachAuthId(userId, email) {
+  await supabase
+    .from("coaches")
+    .update({ user_id: userId })
+    .eq("email", email)
+    .is("user_id", null);
+  // Intentionally ignore errors: user_id may already be set, or email may not match.
 }
 
 // ── coach dashboard: team + athlete summaries (lightweight; no plan tree) ─────
