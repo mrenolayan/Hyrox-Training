@@ -21,8 +21,8 @@ table of JSON blobs. Types are PostgreSQL / Supabase.
 
 **Plan ownership = the team (Plan A).** A plan belongs to a *team*, and a solo
 athlete is simply a team of one. Each `plan_day` has one `plan_entry` **per
-athlete** (modeled on the `a0/a1/a2/a3` keying in `HyroxHungAndrewAnaheim.jsx`,
-not the older `r/p` keying). This is the single biggest structural decision.
+athlete** (modeled on the `a0/a1/a2/a3` keying in `HyroxHungAndrewAnaheim.jsx`
+and `HyroxTrainingApp.jsx`). This is the single biggest structural decision.
 
 ```
 coaches ──< teams ──< plans ──< plan_weeks ──< plan_days ──< plan_entries
@@ -288,7 +288,7 @@ Until Phase 4 we develop with permissive policies. The target policies:
 
 ## Migration from `kv_store` (Phase 5)
 
-Current keys (per `PLAN_ID`, e.g. `team-walker-dc`):
+Current keys (per `PLAN_ID`, namespaced like `hyrox-<PLAN_ID>-…`):
 - `hyrox-<PLAN_ID>-logs-a<N>` → JSON map of `w{week}-{day}` → `{done, metric, notes, date}`
 - `hyrox-<PLAN_ID>-coach-notes` → JSON map of week → note
 - `hyrox-<PLAN_ID>-workout-overrides` → JSON map per athlete of per-session edits
@@ -300,19 +300,20 @@ to the matching `plan_entries` row (by week/day/athlete), and insert `logs` /
 read-only until verified, then retired.
 
 > **Index → UUID mapping is required.** `kv_store` keys identify athletes by
-> *index* (`a0`, `a1`) — or `reece`/`partner` in the oldest Walker keys. The new
-> tables use UUIDs. The migration needs an explicit lookup table per PLAN_ID:
-> `team-walker-dc: a0/reece → <Reece uuid>, a1/partner → <Samantha uuid>`, etc.
-> Build and verify that map before inserting any `logs`.
+> *index* (`a0`, `a1`, …). The new tables use UUIDs. The migration needs an
+> explicit lookup table per PLAN_ID, e.g. `<plan_id>: a0 → <athlete uuid>,
+> a1 → <athlete uuid>`. Build and verify that map before inserting any `logs`.
 
 ---
 
 ## Seed data (Phase 1)
 
-Seed two real teams to prove the multi-athlete model end-to-end:
-- **Team Walker (DC)** — Reece + Samantha, mixed_doubles, race 2026-09-03, 12 wk.
-  Plan content lifted from `HyroxTrainer.jsx` `weekPlan`.
-- **Hung (Anaheim)** — from `HyroxHungAndrewAnaheim.jsx`, race 2026-12-04.
+Seed two teams to prove the multi-athlete model end-to-end:
+- **Hung / Andrew (Anaheim)** — from `HyroxHungAndrewAnaheim.jsx`, race
+  2026-12-04. The real reference plan, copied verbatim (12 wk, `a0/a1` entries).
+- **One generated team** — built by the generator from a sample intake, to prove
+  the generation path end-to-end.
 
-> **DECIDED:** Copy the Walker plan verbatim (real, hand-tuned) and generate a
-> plan for one athlete to exercise the generator. Best of both.
+> **DECIDED:** Copy the Hung/Andrew Anaheim plan verbatim (the reference plan)
+> and generate one team's plan to exercise the generator. Best of both.
+> (The deprecated Walker v1 `HyroxTrainer.jsx` is **not** used as a foundation.)

@@ -30,7 +30,8 @@ code. The UI may hide buttons for nicety, but the security boundary is the DB.
 - **Default pace units = metric (/km).** (Note: the current template defaults to
   `us` — we are flipping the default to metric.)
 - **Plan lengths: 8 / 12 / 16 / 20 weeks.** There is **no hand-authored content
-  beyond 12 weeks** (the Walker and Hung files are both 12-week plans). So the
+  beyond 12 weeks** (the reference plans — `HyroxHungAndrewAnaheim.jsx` and
+  `HyroxTrainingApp.jsx` — are both 12-week plans). So the
   generator builds **any length procedurally from rules**: session templates +
   phase rhythm (extracted from the 12-week plans as data) → scale base/build
   blocks, deload every ~4th week, 3-week peak+taper. Reno tunes the output.
@@ -132,7 +133,7 @@ multi-coach impossible later).
 ## Build order (see ARCHITECTURE.md for detail)
 
 0. **Docs** (this file + ARCHITECTURE.md + DATA_MODEL.md) — review contract.
-1. Supabase schema + RLS, seeded with Walker DC + Hung Anaheim. **Approve schema before it touches the live DB.**
+1. Supabase schema + RLS, seeded with Hung/Andrew Anaheim (+ one generated team). **Approve schema before it touches the live DB.**
 2. Data-access layer (`lib/db.js`).
 3. Business logic + hybrid generator (`lib/*.js`).
 4. Supabase Auth (magic link); RLS live; roles.
