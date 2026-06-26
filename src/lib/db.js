@@ -144,3 +144,64 @@ export async function upsertPlanEntries(entries) {
     .upsert(entries, { onConflict: "plan_day_id,athlete_id" })
     .select());
 }
+
+// ── write: persist an entire generated plan tree ───────────────────────────────
+// Accepts the output of generatePlan() and upserts weeks → days → entries.
+// Requires migration 0002 (unique constraints on plan_weeks and plan_days).
+// Manual coach edits to plan_entries survive because entries upsert on
+// (plan_day_id, athlete_id), so only freshly generated rows overwrite.
+//
+// generatedWeeks shape: [{ week_number, phase, focus, days: [{ day_of_week, shared, optional, entries }] }]
+export async function savePlanTree(planId, generatedWeeks) {
+  if (!generatedWeeks?.length) return { weeks: 0, days: 0, entries: 0 };
+
+  let totalDays = 0;
+  let totalEntries = 0;
+
+  for (const wk of generatedWeeks) {
+    // Upsert the week row (unique on plan_id + week_number)
+    const weekRows = unwrap(`savePlanTree.week_${wk.week_number}`, await supabase
+      .from("plan_weeks")
+      .upsert(
+        { plan_id: planId, week_number: wk.week_number, phase: wk.phase, focus: wk.focus },
+        { onConflict: "plan_id,week_number" }
+      )
+      .select("id, week_number"));
+    const weekId = weekRows[0]?.id;
+    if (!weekId) throw new Error(`savePlanTree: failed to upsert week ${wk.week_number}`);
+
+    for (const d of wk.days ?? []) {
+      // Upsert the day row (unique on plan_week_id + day_of_week)
+      const dayRows = unwrap(`savePlanTree.day_${wk.week_number}_${d.day_of_week}`, await supabase
+        .from("plan_days")
+        .upsert(
+          { plan_week_id: weekId, day_of_week: d.day_of_week, shared: d.shared, optional: d.optional },
+          { onConflict: "plan_week_id,day_of_week" }
+        )
+        .select("id"));
+      const dayId = dayRows[0]?.id;
+      if (!dayId) throw new Error(`savePlanTree: failed to upsert day ${d.day_of_week} wk ${wk.week_number}`);
+      totalDays++;
+
+      // Upsert entries (unique on plan_day_id + athlete_id — already existed in 0001)
+      const entryRows = d.entries ?? [];
+      if (entryRows.length) {
+        const toUpsert = entryRows.map(e => ({
+          plan_day_id: dayId,
+          athlete_id: e.athlete_id,
+          session_type: e.session_type,
+          label: e.label,
+          detail: e.detail ?? null,
+          metric_label: e.metric_label ?? null,
+        }));
+        const inserted = unwrap(`savePlanTree.entries_${wk.week_number}_${d.day_of_week}`, await supabase
+          .from("plan_entries")
+          .upsert(toUpsert, { onConflict: "plan_day_id,athlete_id" })
+          .select("id"));
+        totalEntries += inserted.length;
+      }
+    }
+  }
+
+  return { weeks: generatedWeeks.length, days: totalDays, entries: totalEntries };
+}
