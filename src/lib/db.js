@@ -36,6 +36,25 @@ export async function getTeamsForCoach(coachId) {
     .order("created_at", { ascending: true }));
 }
 
+// ── athletes for a team with full profiles (needed by the plan generator) ─────
+export async function getAthletesForTeam(teamId) {
+  const members = unwrap("getAthletesForTeam.members", await supabase
+    .from("team_members")
+    .select("athlete_id")
+    .eq("team_id", teamId)
+    .is("left_at", null));
+  if (!members.length) return [];
+  const ids = members.map((m) => m.athlete_id);
+  return unwrap("getAthletesForTeam.athletes", await supabase
+    .from("athletes")
+    .select(`
+      id, name, color, role, run_pace, longest_run,
+      station_ratings ( station, rating ),
+      athlete_profiles ( known_weights, team_split_notes, injuries_notes )
+    `)
+    .in("id", ids));
+}
+
 // ── one athlete: profile + ratings + modalities (intake view) ─────────────────
 export async function getAthlete(athleteId) {
   const rows = unwrap("getAthlete", await supabase

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import * as db from "./lib/db.js";
+import { generatePlan } from "./lib/plan.js";
 
-// ── Phase 2 smoke UI: a real coach dashboard reading through lib/db.js. ────────
+// ── Phase 2/3 smoke UI: coach dashboard + plan generator wired to live DB. ──────
 // Minimal styling on purpose — the polished UI (tabs/theme/countdown) lands in
-// Phase 6. The point here is to prove the data layer works against live data.
+// Phase 6. The point here is to prove the data layer and generator work.
 
 const T = {
   bg: "#07070e", card: "#0f0f1e", inset: "#0a0a14", border: "#22223a",
@@ -18,6 +19,7 @@ export default function App() {
   const [week, setWeek] = useState(1);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -38,6 +40,21 @@ export default function App() {
     } catch (e) { setError(e.message); }
   }
 
+  async function handleGenerate(team, plan) {
+    setError(null); setGenerating(true);
+    try {
+      const athletes = await db.getAthletesForTeam(team.id);
+      const generated = generatePlan(team, plan, athletes);
+      const counts = await db.savePlanTree(plan.id, generated.weeks);
+      console.log("savePlanTree counts:", counts);
+      // Reload the plan tree from DB so the UI reflects what was saved
+      const fresh = await db.getPlanForTeam(team.id);
+      setOpenTeam({ team, plan: fresh });
+      setWeek(1);
+    } catch (e) { setError(e.message); }
+    finally { setGenerating(false); }
+  }
+
   if (loading) return <Shell><p style={{ color: T.dim }}>Loading…</p></Shell>;
   if (error) return <Shell><p style={{ color: "#f87171" }}>Error: {error}</p></Shell>;
 
@@ -55,7 +72,18 @@ export default function App() {
         </p>
 
         {weeks.length === 0 ? (
-          <p style={{ color: T.faint }}>No plan generated yet (draft).</p>
+          <div>
+            <p style={{ color: T.faint, marginBottom: 12 }}>No plan generated yet (draft).</p>
+            <button
+              data-testid="generate-plan"
+              onClick={() => handleGenerate(team, plan)}
+              disabled={generating || !plan}
+              style={{ ...btn, borderColor: T.accent, color: T.accent, opacity: generating ? 0.5 : 1 }}
+            >
+              {generating ? "Generating…" : `Generate ${plan?.weeks}-week plan`}
+            </button>
+            {error && <p style={{ color: "#f87171", marginTop: 8, fontSize: 13 }}>{error}</p>}
+          </div>
         ) : (
           <>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0 16px" }}>
