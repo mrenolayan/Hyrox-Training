@@ -1,16 +1,8 @@
 // ════════════════════════════════════════════════════════════════════════════
 //  db.js — the ONLY module that talks to Supabase.
-//
-//  UI and hooks call these named functions; they get back plain JS objects and
-//  arrays, never raw Supabase query builders or responses. If you need data,
-//  add a function here — don't import supabaseClient anywhere else.
-//
-//  Convention: every function throws on error (with a readable message) and
-//  returns the data. Callers/hooks catch and surface errors in the UI.
 // ════════════════════════════════════════════════════════════════════════════
 import { supabase } from "./supabaseClient.js";
 
-// small helper: unwrap { data, error }, throw on error
 function unwrap(label, { data, error }) {
   if (error) throw new Error(`${label}: ${error.message}`);
   return data;
@@ -18,30 +10,24 @@ function unwrap(label, { data, error }) {
 
 // ── coaches ──────────────────────────────────────────────────────────────────
 export async function getCoach() {
-  // Once RLS is enabled, this naturally returns only the authenticated coach's row.
-  // Pre-RLS it returns the first coach (fine for single-coach dev).
   const rows = unwrap("getCoach", await supabase.from("coaches").select("*").limit(1));
   return rows[0] ?? null;
 }
 
-// Link coaches.user_id to the Supabase auth user on first magic-link login.
-// Idempotent: the IS NULL guard makes repeated calls safe.
-// Must be called BEFORE 0003_rls.sql is applied (anon key has write access pre-RLS).
 export async function linkCoachAuthId(userId, email) {
   await supabase
     .from("coaches")
     .update({ user_id: userId })
     .eq("email", email)
     .is("user_id", null);
-  // Intentionally ignore errors: user_id may already be set, or email may not match.
 }
 
-// ── coach dashboard: team + athlete summaries (lightweight; no plan tree) ─────
+// ── coach dashboard ───────────────────────────────────────────────────────────
 export async function getTeamsForCoach(coachId) {
   return unwrap("getTeamsForCoach", await supabase
     .from("teams")
     .select(`
-      id, name, format_id, units, created_at,
+      id, name, format_id, units, require_auth, created_at,
       plans ( id, weeks, days_per_week, race_name, race_city, race_iso, status ),
       team_members ( athlete:athletes ( id, name, color, role, run_pace ) )
     `)
@@ -49,7 +35,7 @@ export async function getTeamsForCoach(coachId) {
     .order("created_at", { ascending: true }));
 }
 
-// ── athletes for a team with full profiles (needed by the plan generator) ─────
+// ── athletes for a team ───────────────────────────────────────────────────────
 export async function getAthletesForTeam(teamId) {
   const members = unwrap("getAthletesForTeam.members", await supabase
     .from("team_members")
@@ -68,7 +54,7 @@ export async function getAthletesForTeam(teamId) {
     .in("id", ids));
 }
 
-// ── one athlete: profile + ratings + modalities (intake view) ─────────────────
+// ── one athlete ───────────────────────────────────────────────────────────────
 export async function getAthlete(athleteId) {
   const rows = unwrap("getAthlete", await supabase
     .from("athletes")
@@ -83,7 +69,7 @@ export async function getAthlete(athleteId) {
   return rows[0] ?? null;
 }
 
-// ── full plan tree for a team (lazy-loaded when a team is opened) ──────────────
+// ── full plan tree ────────────────────────────────────────────────────────────
 export async function getPlanForTeam(teamId) {
   const rows = unwrap("getPlanForTeam", await supabase
     .from("plans")
@@ -106,7 +92,7 @@ export async function getPlanForTeam(teamId) {
   return rows[0] ?? null;
 }
 
-// ── logs for one athlete (their own) ──────────────────────────────────────────
+// ── logs ──────────────────────────────────────────────────────────────────────
 export async function getLogsForAthlete(athleteId) {
   return unwrap("getLogsForAthlete", await supabase
     .from("logs")
@@ -114,9 +100,7 @@ export async function getLogsForAthlete(athleteId) {
     .eq("athlete_id", athleteId));
 }
 
-// ── logs for a whole team (own + teammates' — the shared team view) ───────────
 export async function getLogsForTeam(teamId) {
-  // athletes currently on the team
   const members = unwrap("getLogsForTeam.members", await supabase
     .from("team_members")
     .select("athlete_id")
@@ -133,7 +117,7 @@ export async function getLogsForTeam(teamId) {
     .in("athlete_id", ids));
 }
 
-// ── write: upsert a log (one row per athlete+entry; re-logging overwrites) ─────
+// ── write: upsert a log ───────────────────────────────────────────────────────
 export async function saveLog({ athleteId, planId, planEntryId, done, metric, notes, loggedDate }) {
   const row = {
     athlete_id: athleteId, plan_id: planId, plan_entry_id: planEntryId,
@@ -147,7 +131,7 @@ export async function saveLog({ athleteId, planId, planEntryId, done, metric, no
   return rows[0];
 }
 
-// ── write: coach note for a week (one per week; upsert) ───────────────────────
+// ── write: coach note ─────────────────────────────────────────────────────────
 export async function saveCoachNote(planWeekId, body) {
   const rows = unwrap("saveCoachNote", await supabase
     .from("coach_notes")
@@ -157,7 +141,7 @@ export async function saveCoachNote(planWeekId, body) {
   return rows[0];
 }
 
-// ── write: teammate note/reaction on a log ────────────────────────────────────
+// ── write: team note ──────────────────────────────────────────────────────────
 export async function addTeamNote({ logId, authorAthleteId, body, reaction }) {
   const rows = unwrap("addTeamNote", await supabase
     .from("team_notes")
@@ -166,9 +150,7 @@ export async function addTeamNote({ logId, authorAthleteId, body, reaction }) {
   return rows[0];
 }
 
-// ── write: persist generated/edited plan entries (upsert by day+athlete) ──────
-// Used by the generator (Phase 3) and coach inline edits. Manual tweaks survive
-// regeneration because we upsert on (plan_day_id, athlete_id) rather than wipe.
+// ── write: upsert plan entries ────────────────────────────────────────────────
 export async function upsertPlanEntries(entries) {
   if (!entries?.length) return [];
   return unwrap("upsertPlanEntries", await supabase
@@ -177,14 +159,17 @@ export async function upsertPlanEntries(entries) {
     .select());
 }
 
-// ── write: create a full team with athletes + plan in one shot (intake form) ───
+// ── write: create a full team + athletes + plan ───────────────────────────────
 export async function createTeamFull({
   coachId, teamName, formatId, teamUnits, planWeeks, planDaysPerWeek,
-  startISO, raceName, raceCity, raceISO, athletes,
+  startISO, raceName, raceCity, raceISO, requireAuth, athletes,
 }) {
   const teamRows = unwrap("createTeam", await supabase
     .from("teams")
-    .insert({ coach_id: coachId, name: teamName, format_id: formatId, units: teamUnits })
+    .insert({
+      coach_id: coachId, name: teamName, format_id: formatId, units: teamUnits,
+      require_auth: requireAuth ?? false,
+    })
     .select());
   const team = teamRows[0];
 
@@ -237,13 +222,7 @@ export async function createTeamFull({
   return { team, plan, athletes: athleteRows };
 }
 
-// ── write: persist an entire generated plan tree ───────────────────────────────
-// Accepts the output of generatePlan() and upserts weeks → days → entries.
-// Requires migration 0002 (unique constraints on plan_weeks and plan_days).
-// Manual coach edits to plan_entries survive because entries upsert on
-// (plan_day_id, athlete_id), so only freshly generated rows overwrite.
-//
-// generatedWeeks shape: [{ week_number, phase, focus, days: [{ day_of_week, shared, optional, entries }] }]
+// ── write: save full plan tree ────────────────────────────────────────────────
 export async function savePlanTree(planId, generatedWeeks) {
   if (!generatedWeeks?.length) return { weeks: 0, days: 0, entries: 0 };
 
@@ -251,7 +230,6 @@ export async function savePlanTree(planId, generatedWeeks) {
   let totalEntries = 0;
 
   for (const wk of generatedWeeks) {
-    // Upsert the week row (unique on plan_id + week_number)
     const weekRows = unwrap(`savePlanTree.week_${wk.week_number}`, await supabase
       .from("plan_weeks")
       .upsert(
@@ -263,7 +241,6 @@ export async function savePlanTree(planId, generatedWeeks) {
     if (!weekId) throw new Error(`savePlanTree: failed to upsert week ${wk.week_number}`);
 
     for (const d of wk.days ?? []) {
-      // Upsert the day row (unique on plan_week_id + day_of_week)
       const dayRows = unwrap(`savePlanTree.day_${wk.week_number}_${d.day_of_week}`, await supabase
         .from("plan_days")
         .upsert(
@@ -275,7 +252,6 @@ export async function savePlanTree(planId, generatedWeeks) {
       if (!dayId) throw new Error(`savePlanTree: failed to upsert day ${d.day_of_week} wk ${wk.week_number}`);
       totalDays++;
 
-      // Upsert entries (unique on plan_day_id + athlete_id — already existed in 0001)
       const entryRows = d.entries ?? [];
       if (entryRows.length) {
         const toUpsert = entryRows.map(e => ({
@@ -296,4 +272,21 @@ export async function savePlanTree(planId, generatedWeeks) {
   }
 
   return { weeks: generatedWeeks.length, days: totalDays, entries: totalEntries };
+}
+
+// ── read: public team view (no auth required for require_auth=false teams) ─────
+// Anon RLS policies grant read access when team.require_auth = false.
+// Throws "AUTH_REQUIRED" so the caller can show the athlete magic-link screen.
+export async function getPublicTeamView(teamId) {
+  const teamRows = unwrap("getPublicTeamView.team", await supabase
+    .from("teams")
+    .select("id, name, format_id, units, require_auth")
+    .eq("id", teamId)
+    .limit(1));
+  const team = teamRows[0] ?? null;
+  if (!team) throw new Error("Team not found");
+  if (team.require_auth) throw new Error("AUTH_REQUIRED");
+  const plan = await getPlanForTeam(teamId);
+  const athletes = await getAthletesForTeam(teamId);
+  return { team, plan, athletes };
 }

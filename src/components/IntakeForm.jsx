@@ -59,6 +59,7 @@ export default function IntakeForm({ T, resolvedTheme, coachId, onDone, onCancel
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState(null);
+  const [requireAuth, setRequireAuth] = useState(false);
 
   // team fields
   const [teamName, setTeamName]           = useState("");
@@ -127,6 +128,7 @@ export default function IntakeForm({ T, resolvedTheme, coachId, onDone, onCancel
       }));
 
       const { team, plan, athletes: athleteRows } = await db.createTeamFull({
+      requireAuth,
         coachId,
         teamName: teamName.trim(),
         formatId,
@@ -237,6 +239,22 @@ export default function IntakeForm({ T, resolvedTheme, coachId, onDone, onCancel
                   borderRadius: 8, padding: "8px", fontSize: 12, cursor: "pointer",
                 }}>{lbl}</button>
               ))}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16 }}>
+              <input
+                type="checkbox"
+                id="require_auth"
+                checked={requireAuth}
+                onChange={(e) => setRequireAuth(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: "pointer", marginTop: 2 }}
+              />
+              <label htmlFor="require_auth" style={{ color: T.body, fontSize: 13, cursor: "pointer" }}>
+                Require athlete login (magic link) for this team
+                <span style={{ color: T.faint, fontSize: 11, display: "block" }}>
+                  Leave unchecked for link-only access (existing teams like Walker, Hung/Andrew use this)
+                </span>
+              </label>
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>

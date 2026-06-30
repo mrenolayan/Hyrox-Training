@@ -10,16 +10,23 @@ const fmtDate = (iso) => iso
   ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
   : "—";
 
+// Copy team link to clipboard
+function copyTeamLink(teamId) {
+  const url = `${window.location.origin}${window.location.pathname}?t=${teamId}`;
+  navigator.clipboard.writeText(url).catch(() => {});
+}
+
 export default function App() {
-  const [session, setSession]     = useState(undefined);
-  const [coach, setCoach]         = useState(null);
-  const [teams, setTeams]         = useState([]);
-  const [openTeam, setOpenTeam]   = useState(null); // { team, plan }
+  const [session, setSession]       = useState(undefined);
+  const [coach, setCoach]           = useState(null);
+  const [teams, setTeams]           = useState([]);
+  const [openTeam, setOpenTeam]     = useState(null); // { team, plan, isCoach }
   const [showIntake, setShowIntake] = useState(false);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("hyrox-theme") || "auto");
-  const [units, setUnits]         = useState(() => localStorage.getItem("hyrox-units") || "metric");
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [themeMode, setThemeMode]   = useState(() => localStorage.getItem("hyrox-theme") || "auto");
+  const [units, setUnits]           = useState(() => localStorage.getItem("hyrox-units") || "metric");
+  const [copied, setCopied]         = useState(null); // team id that was just copied
 
   const resolvedTheme = themeMode === "auto" ? autoTheme() : themeMode;
   const T = palettes[resolvedTheme];
@@ -27,12 +34,38 @@ export default function App() {
   const changeTheme = (m) => { setThemeMode(m); localStorage.setItem("hyrox-theme", m); };
   const changeUnits = (u) => { setUnits(u); localStorage.setItem("hyrox-units", u); };
 
+  // ── check for ?t=<teamId> public link ──────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const teamId = params.get("t");
+    if (!teamId) return;
+    setLoading(true);
+    db.getPublicTeamView(teamId)
+      .then(({ team, plan, athletes }) => {
+        setOpenTeam({ team, plan, athletes, isCoach: false });
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.message === "AUTH_REQUIRED") {
+          // require_auth=true team — fall through to normal coach/athlete auth flow
+          setLoading(false);
+        } else {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── coach auth ────────────────────────────────────────────────────────────
   useEffect(() => {
     getSession().then(setSession).catch(() => setSession(null));
     return onAuthStateChange(setSession);
   }, []);
 
   useEffect(() => {
+    // Skip coach load if we already resolved a public team link
+    if (openTeam) return;
     if (!session) return;
     setLoading(true);
     (async () => {
@@ -44,13 +77,15 @@ export default function App() {
       } catch (e) { setError(e.message); }
       finally { setLoading(false); }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   async function openTeamPlan(team) {
     setError(null);
     try {
       const plan = await db.getPlanForTeam(team.id);
-      setOpenTeam({ team, plan });
+      const athletes = await db.getAthletesForTeam(team.id);
+      setOpenTeam({ team, plan, athletes, isCoach: true });
     } catch (e) { setError(e.message); }
   }
 
@@ -60,29 +95,52 @@ export default function App() {
     setTeams(fresh);
   }
 
-  if (session === undefined) return <Shell T={T}><p style={{ color: T.dim }}>Loading…</p></Shell>;
-  if (!session)  return <LoginScreen T={T} />;
-  if (loading)   return <Shell T={T}><p style={{ color: T.dim }}>Loading…</p></Shell>;
-  if (error)     return <Shell T={T}><p style={{ color: "#f87171" }}>Error: {error}</p></Shell>;
+  function handleCopyLink(e, teamId) {
+    e.stopPropagation();
+    copyTeamLink(teamId);
+    setCopied(teamId);
+    setTimeout(() => setCopied(null), 1800);
+  }
 
+  // ── loading / error states ────────────────────────────────────────────────
+  if (loading) return <Shell T={T}><p style={{ color: T.dim }}>Loading…</p></Shell>;
+  if (error)   return <Shell T={T}><p style={{ color: "#f87171" }}>Error: {error}</p></Shell>;
+
+  // ── public athlete view (team link) ───────────────────────────────────────
   if (openTeam) {
     return (
       <TeamView
         team={openTeam.team}
         plan={openTeam.plan}
+        athletes={openTeam.athletes}
         coach={coach}
+        isCoach={openTeam.isCoach}
         T={T}
         themeMode={themeMode}
         resolvedTheme={resolvedTheme}
         units={units}
         onChangeTheme={changeTheme}
         onChangeUnits={changeUnits}
-        onBack={() => setOpenTeam(null)}
-        onPlanUpdated={() => openTeamPlan(openTeam.team)}
+        onBack={() => {
+          setOpenTeam(null);
+          // Clear ?t= param so back goes to coach dashboard
+          window.history.replaceState({}, "", window.location.pathname);
+        }}
+        onPlanUpdated={() => openTeam.isCoach
+          ? openTeamPlan(openTeam.team)
+          : db.getPublicTeamView(openTeam.team.id).then(({ team, plan, athletes }) =>
+              setOpenTeam((prev) => ({ ...prev, team, plan, athletes }))
+            )
+        }
       />
     );
   }
 
+  // ── coach login gate ──────────────────────────────────────────────────────
+  if (session === undefined) return <Shell T={T}><p style={{ color: T.dim }}>Loading…</p></Shell>;
+  if (!session) return <LoginScreen T={T} />;
+
+  // ── coach dashboard ───────────────────────────────────────────────────────
   return (
     <Shell T={T}>
       {/* header row */}
@@ -122,11 +180,25 @@ export default function App() {
             display: "block", width: "100%", textAlign: "left",
             background: T.card, border: `1px solid ${T.border}`,
             borderRadius: 12, padding: 16, marginBottom: 10,
-            cursor: "pointer", color: T.text,
+            cursor: "pointer", color: T.text, position: "relative",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.strong }}>{team.name}</span>
-              <span style={{ color: T.faint, fontSize: 11 }}>{fmtFormat(team.format_id)}</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ color: T.faint, fontSize: 11 }}>{fmtFormat(team.format_id)}</span>
+                <span
+                  onClick={(e) => handleCopyLink(e, team.id)}
+                  role="button"
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 8,
+                    border: `1px solid ${T.border2}`,
+                    color: copied === team.id ? "#4ade80" : T.faint,
+                    cursor: "pointer", userSelect: "none",
+                  }}
+                >
+                  {copied === team.id ? "Copied!" : "Copy link"}
+                </span>
+              </div>
             </div>
             {plan && (
               <div style={{ color: T.dim, fontSize: 12, marginTop: 4 }}>

@@ -90,12 +90,15 @@ const currentPlanWeek = (startISO, totalWeeks) => {
 };
 
 // ── TeamView ───────────────────────────────────────────────────────────────────
-export default function TeamView({ team, plan, coach, T, themeMode, resolvedTheme, units, onChangeTheme, onChangeUnits, onBack, onPlanUpdated }) {
-  const members = team.team_members.map((m) => m.athlete);
+export default function TeamView({ team, plan, athletes: athletesProp = [], coach, isCoach = true, T, themeMode, resolvedTheme, units, onChangeTheme, onChangeUnits, onBack, onPlanUpdated }) {
+  const members = athletesProp;
   const isTeamFormat = ["doubles_men","doubles_women","mixed_doubles","relay_men","relay_women","relay_mixed"].includes(team.format_id);
 
   const [planState, setPlanState]       = useState(plan);
-  const [athleteIdx, setAthleteIdx]     = useState(0);
+  const [athleteIdx, setAthleteIdx]     = useState(() => {
+    const saved = localStorage.getItem("hyrox-athlete-" + team?.id);
+    return saved ? parseInt(saved, 10) : 0;
+  });
   const [view, setView]                 = useState("week");
   const [selectedWeek, setSelectedWeek] = useState(() => {
     const total = plan?.plan_weeks?.length ?? 1;
@@ -103,8 +106,13 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
   });
   const [logs, setLogs]               = useState({});    // plan_entry_id → log row
   const [logsLoading, setLogsLoading] = useState(false);
+
+  // Persist selected athlete across page loads
+  useEffect(() => {
+    if (team?.id) localStorage.setItem("hyrox-athlete-" + team.id, String(athleteIdx));
+  }, [athleteIdx, team?.id]);
   const [openLog, setOpenLog]         = useState(null);  // entry_id whose form is open
-  const [logDraft, setLogDraft]       = useState({ metric: "", notes: "" });
+  const [logDraft, setLogDraft]       = useState({ metric: "", notes: "", date: new Date().toISOString().slice(0, 10) });
   const [editingEntry, setEditingEntry] = useState(null);
   const [editDraft, setEditDraft]       = useState({ label: "", detail: "", metric_label: "" });
   const [editingNote, setEditingNote]   = useState(false);
@@ -112,7 +120,7 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
   const [showCountdown, setShowCountdown] = useState(false);
   const [, setTick]                     = useState(0);
   const [generating, setGenerating]     = useState(false);
-  const [athleteDetails, setAthleteDetails] = useState([]); // full athlete rows w/ ratings
+  const athleteDetails = athletesProp; // full athlete rows w/ ratings
   const [error, setError]               = useState(null);
 
   const selectedAthlete = members[athleteIdx] ?? members[0];
@@ -136,11 +144,6 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
       .catch(() => {})
       .finally(() => setLogsLoading(false));
   }, [selectedAthlete?.id]);
-
-  // load full athlete details (with station_ratings) for Strategy tab
-  useEffect(() => {
-    db.getAthletesForTeam(team.id).then(setAthleteDetails).catch(() => {});
-  }, [team.id]);
 
   // ── generate plan ────────────────────────────────────────────────────────────
   async function handleGenerate() {
@@ -166,10 +169,11 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
         done: true,
         metric: logDraft.metric || null,
         notes: logDraft.notes || null,
+        loggedDate: logDraft.date || new Date().toISOString().slice(0, 10),
       });
       setLogs((prev) => ({ ...prev, [entry.id]: saved }));
       setOpenLog(null);
-      setLogDraft({ metric: "", notes: "" });
+      setLogDraft({ metric: "", notes: "", date: new Date().toISOString().slice(0, 10) });
     } catch (e) { setError(e.message); }
   }
 
@@ -406,6 +410,7 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
             resolvedTheme={resolvedTheme}
             T={T}
             isTeamFormat={isTeamFormat}
+            isCoach={isCoach}
             onToggleDone={handleToggleDone}
             onSaveLog={handleSaveLog}
             onSaveEdit={handleSaveEdit}
@@ -430,6 +435,7 @@ export default function TeamView({ team, plan, coach, T, themeMode, resolvedThem
             onGenerate={handleGenerate}
             setSelectedWeek={setSelectedWeek}
             setView={setView}
+            isCoach={isCoach}
           />
         )}
 
@@ -468,7 +474,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
   logs, logsLoading, openLog, setOpenLog, logDraft, setLogDraft,
   editingEntry, setEditingEntry, editDraft, setEditDraft,
   editingNote, setEditingNote, noteDraft, setNoteDraft,
-  units, resolvedTheme, T, isTeamFormat, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
+  units, resolvedTheme, T, isTeamFormat, isCoach, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
   hasWeeks, generating, onGenerate,
 }) {
   const PHASE_COLORS = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171" };
@@ -478,11 +484,15 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
     return (
       <div style={{ textAlign: "center", padding: "40px 0" }}>
         <p style={{ color: T.dim, marginBottom: 16 }}>No plan generated yet.</p>
-        <button onClick={onGenerate} disabled={generating} style={{
-          background: "none", border: "1px solid #60a5fa", color: "#60a5fa",
-          borderRadius: 8, padding: "10px 24px", fontSize: 14, cursor: "pointer",
-          opacity: generating ? 0.5 : 1,
-        }}>{generating ? "Generating…" : `Generate ${planState?.weeks ?? "?"}-week plan`}</button>
+        {isCoach ? (
+          <button onClick={onGenerate} disabled={generating} style={{
+            background: "none", border: "1px solid #60a5fa", color: "#60a5fa",
+            borderRadius: 8, padding: "10px 24px", fontSize: 14, cursor: "pointer",
+            opacity: generating ? 0.5 : 1,
+          }}>{generating ? "Generating…" : `Generate ${planState?.weeks ?? "?"}-week plan`}</button>
+        ) : (
+          <p style={{ color: T.faint, fontSize: 12 }}>Ask your coach to generate the plan.</p>
+        )}
       </div>
     );
   }
@@ -515,15 +525,17 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
 
             {/* coach note */}
             <div style={{ marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
-              {!editingNote ? (
+              {!editingNote || !isCoach ? (
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                   <div style={{ fontSize: 11.5, color: weekData.coach_notes?.body ? "#f0c020" : T.faint, lineHeight: 1.5 }}>
                     📣 {weekData.coach_notes?.body || "No coach note this week."}
                   </div>
-                  <button onClick={() => { setEditingNote(true); setNoteDraft(weekData.coach_notes?.body || ""); }} style={{
-                    background: "none", border: `1px solid ${T.border2}`, color: T.dim,
-                    borderRadius: 6, padding: "3px 8px", fontSize: 10, cursor: "pointer", flexShrink: 0,
-                  }}>Edit</button>
+                  {isCoach && (
+                    <button onClick={() => { setEditingNote(true); setNoteDraft(weekData.coach_notes?.body || ""); }} style={{
+                      background: "none", border: `1px solid ${T.border2}`, color: T.dim,
+                      borderRadius: 6, padding: "3px 8px", fontSize: 10, cursor: "pointer", flexShrink: 0,
+                    }}>Edit</button>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -617,7 +629,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                     <div style={{ marginTop: 8 }}>
                       {!isOpen ? (
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <button onClick={() => { setOpenLog(entry.id); setLogDraft({ metric: log?.metric || "", notes: log?.notes || "" }); }} style={{
+                          <button onClick={() => { setOpenLog(entry.id); setLogDraft({ metric: log?.metric || "", notes: log?.notes || "", date: log?.logged_date || new Date().toISOString().slice(0, 10) }); }} style={{
                             background: "none", border: `1px solid ${T.border2}`, color: T.body,
                             borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer",
                           }}>{log?.metric ? "Edit log" : `Log: ${metricLbl}`}</button>
@@ -628,6 +640,11 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div>
+                            <label style={{ fontSize: 9, color: T.faint, textTransform: "uppercase", letterSpacing: "0.08em" }}>Date logged</label>
+                            <input type="date" value={logDraft.date} onChange={(e) => setLogDraft((p) => ({ ...p, date: e.target.value }))}
+                              style={{ display: "block", width: "100%", boxSizing: "border-box", background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", marginTop: 3 }} />
+                          </div>
                           <input value={logDraft.metric} onChange={(e) => setLogDraft((p) => ({ ...p, metric: e.target.value }))}
                             placeholder={metricLbl}
                             style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
@@ -666,16 +683,20 @@ function handleToggleDoneBtn(entry, log, onToggleDone) {
 }
 
 // ── PLAN tab ──────────────────────────────────────────────────────────────────
-function PlanTab({ sortedWeeks, planState, selectedAthlete, T, resolvedTheme, units, generating, hasWeeks, onGenerate, setSelectedWeek, setView }) {
+function PlanTab({ sortedWeeks, planState, selectedAthlete, T, resolvedTheme, units, generating, hasWeeks, onGenerate, setSelectedWeek, setView, isCoach }) {
   if (!hasWeeks) {
     return (
       <div style={{ textAlign: "center", padding: "40px 0" }}>
         <p style={{ color: T.dim, marginBottom: 16 }}>No plan generated yet.</p>
-        <button onClick={onGenerate} disabled={generating} style={{
-          background: "none", border: "1px solid #60a5fa", color: "#60a5fa",
-          borderRadius: 8, padding: "10px 24px", fontSize: 14, cursor: "pointer",
-          opacity: generating ? 0.5 : 1,
-        }}>{generating ? "Generating…" : `Generate ${planState?.weeks ?? "?"}-week plan`}</button>
+        {isCoach ? (
+          <button onClick={onGenerate} disabled={generating} style={{
+            background: "none", border: "1px solid #60a5fa", color: "#60a5fa",
+            borderRadius: 8, padding: "10px 24px", fontSize: 14, cursor: "pointer",
+            opacity: generating ? 0.5 : 1,
+          }}>{generating ? "Generating…" : `Generate ${planState?.weeks ?? "?"}-week plan`}</button>
+        ) : (
+          <p style={{ color: T.faint, fontSize: 12 }}>Ask your coach to generate the plan.</p>
+        )}
       </div>
     );
   }
