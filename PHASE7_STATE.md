@@ -14,6 +14,18 @@ Hyrox Trainer is a training plan app being rebuilt from per-client deployed copi
 
 ---
 
+## Code Quality
+
+**db.js Verification (Complete):**
+- ✅ Strictly enforces three-layer boundary (Supabase only here + auth.js)
+- ✅ All functions return plain objects, never raw query builders
+- ✅ Consistent error handling via `unwrap()` function
+- ✅ Proper upsert conflict resolution on all writes
+- ✅ Fixed: All nested inserts in `createTeamFull()` now have error handling (no silent failures)
+- ✅ Phase 7 features fully implemented (public links, flexible logging, require_auth)
+
+---
+
 ## Phase 7: Athlete-Facing Access (COMPLETE)
 
 ### Features Implemented
@@ -73,6 +85,7 @@ export async function getPublicTeamView(teamId) {
 
 - **Modified:** `getTeamsForCoach(coachId)` now selects `require_auth` column
 - **Modified:** `createTeamFull()` accepts `requireAuth` parameter, passes to team insert
+  - **Also fixed:** All nested inserts (profiles, ratings, modalities, team_members) now wrapped in `unwrap()` for error handling
 
 #### `src/App.jsx`
 - **Public link routing** (lines 38–58):
