@@ -1,206 +1,132 @@
-# CLAUDE.md
+# CLAUDE.md — Hyrox Trainer
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> **This file orients Claude Code each session. It is a router, not the spec.**
+> The authoritative documents are `PRODUCT.md`, `ARCHITECTURE.md`, and
+> `DATA_MODEL.md`. When this file and those disagree, **those win** — and tell
+> Reno so this file gets fixed.
 
-## TL;DR: Three-layer architecture (the core rule)
+---
+
+## ⚠️ Read this first: the architecture changed
+
+This project was **rebuilt**. It is no longer a per-athlete template that you
+copy and deploy to a new URL. If you find yourself about to copy a `.jsx` file,
+edit a `CLIENT` block, change a `PLAN_ID`, or write to `window.storage` — **stop.
+That is the old model and it is gone.** The legacy description of that system
+lives in `LEGACY_TEMPLATE_MODEL.md` for history only; do **not** follow it.
+
+**What the app is now:** one deployed app backed by **Supabase**. Every athlete
+is a row in a database, not a code fork. A coach manages many athletes; athletes
+log in to view their plan and log workouts. A UI change ships to everyone in one
+deploy.
+
+| Concept | Old (dead) | Now |
+|---|---|---|
+| New athlete | copy file, edit `CLIENT`, new URL | a row created via the coach dashboard |
+| Storage | `window.storage` / localStorage | Supabase (normalized tables) |
+| Identity | none ("assume trusted users") | Supabase Auth, magic link |
+| Security | none | Row-Level Security (RLS) in the DB |
+| Deploys | one per client | one app, one URL |
+| Plan data | hand-built `weekPlan` array per file | generated procedurally from rules, stored as rows |
+
+---
+
+## The source-of-truth documents
+
+Read these before planning or building. Do not re-derive their contents here.
+
+- **`PRODUCT.md`** — what the app is, the roles, the intake questionnaire (the
+  shared field schema), the UI to preserve, user stories, build order.
+- **`ARCHITECTURE.md`** — the three-layer rule, file layout, tech stack, auth
+  model, data-loading strategy.
+- **`DATA_MODEL.md`** — the normalized schema, every table, RLS policies,
+  indexes, migration-from-legacy plan.
+- **`PHASE7_STATE.md`** — the current implementation snapshot (what's built).
+
+---
+
+## The one rule that matters most: three layers, strictly separated
 
 ```
-UI (React components) → lib/*.js (business logic) → lib/db.js (ONLY Supabase boundary)
+UI components (React)        → render; read via hooks; NEVER import Supabase
+     ↑
+lib/*.js  (business logic)   → plan generation, pace math, unit conversion.
+                               Plain functions. NO React, NO Supabase, NO I/O.
+     ↑
+lib/db.js (data access)      → the ONLY module that talks to Supabase.
+                               If you grep "supabase" outside this file, it's a bug.
 ```
 
-**The golden rule:** if you see `supabase` anywhere outside `lib/db.js`, that's a bug. `lib/db.js` is where ALL database access happens. Business logic in `lib/*.js` is pure functions (testable, no I/O). Components just render.
+When something breaks, the layer tells you where to look: wrong number on screen
+→ `lib/` math; won't save → `lib/db.js`; button misplaced → UI. Full detail in
+`ARCHITECTURE.md`.
 
-See **ARCHITECTURE.md** for detailed reasoning.
+---
 
-## Build & run
+## User & workflow
 
-```bash
-npm install                    # install dependencies
-npm run dev                    # start Vite dev server (http://localhost:5173)
-npm run build                  # build for production
-npm run preview               # preview production build locally
-```
+- **Reno is** the coach, athlete, and developer. **React level: beginner** —
+  always explain *why* code works, not just *what* it does.
+- **Show diffs → Reno reviews → then implement.** Never apply silently.
+- **For any bug or design fork, give 2–3 options with tradeoffs.** No silent
+  decisions.
+- **Never re-interview** for preferences already captured in the spec docs.
+- **Test locally (`npm run dev`) before any Vercel deploy.**
+- **Approve the schema before any migration runs against the live Supabase
+  project.** No migration hits the real DB without Reno's sign-off. (This rule
+  was crossed once already — do not skip it.)
 
-**Test locally before deploying.** The Supabase project (`hyrox-dev`) is shared; all changes push to a live database.
+---
 
-## Project status & phases
+## Non-negotiables (things that have caused real problems)
 
-Current: **Phase 7** (athlete-facing access, shareable team links, flexible logging)
+- **No new Supabase calls outside `lib/db.js`.** The three-layer boundary is the
+  whole design; violating it is how the codebase rots.
+- **The intake questionnaire is defined ONCE** (see `PRODUCT.md`) and reused by
+  both the coach "create athlete" form and the future athlete-facing form. Do not
+  fork the field list.
+- **The plan generator writes via `db.js`, in a transaction, and preserves manual
+  coach edits on regenerate** (diff + upsert — never clobber tweaks).
+- **RLS is the security boundary, not the UI.** Hiding a button is nicety;
+  the database enforces access.
+- **Anonymous / account-less write access is NOT part of this app.** (A Phase 7
+  experiment added it via `?t=<team_id>` links; Phase 8 rolls it back. Every
+  athlete has an account. Login is required to view.) If a task seems to want
+  account-less writes, flag it — it contradicts the model.
 
-**Phase history:**
-1. **Phase 1** — Supabase schema + seed data (Hung/Andrew Anaheim reference plan)
-2. **Phase 2** — `lib/db.js` data-access layer + coach dashboard skeleton
-3. **Phase 3** — `lib/plan.js` generator + business logic; wire generate button
-4. **Phase 4** — Supabase Auth (magic link) + RLS policies
-5. **Phase 5** — Migrate `kv_store` logs to normalized tables
-6. **Phase 6** — UI polish: theme, per-athlete view, session cards, logging, in-app intake form
-7. **Phase 7** — Athlete-facing: shareable links (`/?t=<team_id>`), athlete view (no login), flexible logging with date picker, athlete self-edit
-8. **Phases 8+** — TBD (athlete login/invite for `require_auth=true` teams)
+---
 
-See **PRODUCT.md** for the product contract and **DATA_MODEL.md** for schema details.
+## Environment / stack
 
-## File structure & responsibilities
+- Vite + React 18, inline styling (no external UI libs), deployed on Vercel.
+- `@supabase/supabase-js` is the client. Supabase URL + anon key come from
+  `.env.local` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) — **never
+  hardcoded in source.** The anon key is browser-safe *only because* RLS
+  restricts it.
+- Migrations live in `supabase/migrations/`, reviewed before running.
 
-```
-src/
-├── App.jsx                          # Router & auth flow; public link handling
-├── main.jsx                         # React entry point
-├── lib/
-│   ├── db.js                        # ★★★ SOLE Supabase boundary
-│   ├── supabaseClient.js            # Supabase client config (import only in db.js)
-│   ├── auth.js                      # Magic-link auth helpers
-│   ├── plan.js                      # Plan generator + training rules
-│   └── pace.js                      # Pace parsing & unit conversion
-├── components/
-│   ├── TeamView.jsx                 # Main plan view (coach & athlete)
-│   ├── IntakeForm.jsx               # Multi-step team intake form
-│   └── [others]                     # Supporting UI components
-├── ui/
-│   └── theme.js                     # Color palettes & autoTheme()
-└── [deprecated: HyroxHungAndrewAnaheim.jsx, HyroxTrainer.jsx, HyroxTrainingApp.jsx]
+---
 
-supabase/
-├── migrations/
-│   └── phase*.sql                   # Schema + RLS policies (must be reviewed before running)
-└── seed.sql                         # Initial seed data
+## Current phase
 
-[Root docs]
-├── ARCHITECTURE.md                  # Three-layer design rationale
-├── DATA_MODEL.md                    # Full schema + RLS policies
-├── PRODUCT.md                       # Product contract & user stories
-└── CLAUDE.md                        # This file
-```
+**Phase 8 — Athlete Login & Invite.** Magic-link accounts for all athletes; the
+two legacy teams (Walker DC, Hung/Andrew Anaheim) claim their existing rows once;
+roll back Phase 7 anonymous access; login required to view. See the Phase 8 plan
+(in the Chat project) and `DATA_MODEL.md` for the RLS policies being activated.
 
-### `lib/db.js` — the critical boundary
+**Deployment-order caution:** never activate athlete RLS while `coaches.user_id`
+is null (locks the coach out). Verify it's set before running the Phase 8
+migration.
 
-Every database operation is a named export here:
-- `getCoach()`, `getTeamsForCoach(coachId)` — coach dashboard
-- `getAthletesForTeam(teamId)`, `getPlanForTeam(teamId)` — coach view
-- `getPublicTeamView(teamId)` — athlete view (public link, throws `"AUTH_REQUIRED"` for protected teams)
-- `saveLog(...)`, `savePlanEntry(...)` — write operations
-- `createTeamFull(...)`, `createAthlete(...)` — intake flow
-- etc.
+---
 
-Returns plain JS objects/arrays, never raw Supabase query builders. The rest of the app doesn't know Supabase exists.
+## Roadmap (after Phase 8)
 
-### `lib/*.js` — business logic (pure functions)
+Data migration of legacy logs → normalized tables; in-app athlete intake form;
+Strava + Apple Health integration; AI coaching feedback; per-race leaderboards;
+pre-built template plans. Detail in `PRODUCT.md` / `ARCHITECTURE.md`.
 
-- `lib/plan.js` — `generatePlan(team, plan, athletes)` builds a procedurally-generated training plan from intake data. No I/O.
-- `lib/pace.js` — `parsePace()`, `paceLabel()`, `convertPace()` — pace formatting and km↔mi conversion. Testable.
-- `lib/auth.js` — `getSession()`, `sendMagicLink()`, `signOut()` — authentication helpers (Supabase-aware, but thin).
+---
 
-### UI components
-
-- **App.jsx** — Top-level router. Handles:
-  - Public link routing (`/?t=<teamId>`)
-  - Coach auth + session management
-  - Coach dashboard (team list)
-  - Delegate to `TeamView` or `IntakeForm`
-
-- **TeamView.jsx** — Renders a plan (coach or athlete view). Receives:
-  - `isCoach: boolean` flag to hide/show coach-only controls
-  - `athletes: []` list passed from App (not fetched locally)
-  - Manages athlete selector, session cards, logging UI
-
-- **IntakeForm.jsx** — Multi-step team creation:
-  - Step 0: Team name, format, units, `require_auth` toggle
-  - Step 1–N: Per-athlete fields (pace, station ratings, profile)
-  - Calls `db.createTeamFull()` on submit
-
-## Key architectural decisions
-
-**Three-layer separation** — `lib/db.js` is the database boundary; `lib/*.js` is pure logic; UI just renders. Makes testing, debugging, and future database migration trivial.
-
-**Team ownership (Plan A)** — A plan belongs to a *team*, not an athlete. A solo athlete is a team of one. This prevents athlete-level desync and simplifies plan generation. See DATA_MODEL.md.
-
-**RLS (Row-Level Security)** — The database enforces access control, not the UI. The UI may hide buttons for UX, but the real security boundary is in Supabase RLS policies.
-
-**Public links (`?t=<teamId>`)** — `require_auth` column (default `false`) allows unauthenticated athlete access via anon RLS policies. Existing teams stay link-only; new teams can opt-in to login.
-
-**Flexible logging** — Athletes can log sessions on dates different from today. Logs store `logged_date`, not `created_at`.
-
-**Athlete self-edit** — Athletes can edit `detail` and `notes` on their own logged entries via RLS anon INSERT/UPDATE policies (not full plan edit).
-
-## Workflow rules (how to work with Reno)
-
-1. **Show diffs → review → implement.** Never apply changes silently. For non-obvious choices, show 2–3 options with tradeoffs.
-2. **Test locally** (`npm run dev`) before any Vercel push.
-3. **Get schema approval before migrations hit the live DB.** The Supabase project is shared; misaligned changes can break athlete data.
-4. **Commit clearly.** Use git history to explain *why*, not just *what*. Example: `Phase 7: athlete-facing links + flexible logging` not `update TeamView`.
-
-Rationale: Reno is a React beginner, and the app holds real athlete data in a live Supabase database.
-
-## Common tasks
-
-### Start dev server
-```bash
-npm run dev
-```
-Opens http://localhost:5173. React Fast Refresh works automatically.
-
-### Test a coach flow
-1. Start dev server
-2. Log in with a magic link (use `mrenolayan@gmail.com` if seeded)
-3. Open a team → browse the plan → toggle theme/units
-4. Edit a session inline
-5. Create a new athlete via intake form
-
-### Test an athlete flow (public link)
-1. Get a team ID from the coach dashboard (visible in browser DevTools or from `teams` table)
-2. Open `http://localhost:5173?t=<team_id>` in a new incognito window
-3. Verify: athlete sees the plan, athlete selector works, no Generate button, can log + edit own entries
-
-### Debug database state
-Check Supabase dashboard (https://app.supabase.com) → project `hyrox-dev` → SQL Editor or Table Editor. Verify data shape against DATA_MODEL.md.
-
-### Run a SQL query
-Use Supabase SQL Editor. Example: find all logs for a team:
-```sql
-select logs.* from logs
-join plan_entries on logs.plan_entry_id = plan_entries.id
-join plan_days on plan_entries.plan_day_id = plan_days.id
-join plan_weeks on plan_days.plan_week_id = plan_weeks.id
-join plans on plan_weeks.plan_id = plans.id
-where plans.team_id = '<team-uuid>'
-order by logs.created_at desc;
-```
-
-## Important security notes
-
-**Anon key exposure** — The `VITE_SUPABASE_ANON_KEY` is public (shipped to the browser). This is safe *only because* RLS restricts what it can do. Do NOT bypass RLS checks in the frontend "for convenience." If a coach-only operation needs to be protected, add an RLS policy.
-
-**Service role key** — Kept in `.env.local` (gitignored). Used only for server-side operations (migrations, seeding). Never ship to the browser.
-
-**User data** — Athlete names, paces, injuries, etc. are real. Never log or expose them outside encrypted Supabase channels.
-
-## Deploying to Vercel
-
-```bash
-vercel
-```
-
-Follows prompts. Environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) are auto-linked from the Vercel project settings (connect to GitHub, enable auto-deploy).
-
-**Before deploy:** run `npm run build` locally and verify no errors. Test the production build with `npm run preview`.
-
-## Deferred work
-
-- **Phase 8:** Athlete login/invite flow for `require_auth=true` teams (magic links)
-- **Service role key rotation:** Supabase → Hyrox-dev → Settings → API → Reset `service_role` key (was flagged, not yet done)
-- **Type safety:** TypeScript or JSDoc + type checking (currently plain JS)
-- **Test suite:** Unit tests for `lib/*.js`, e2e tests for critical flows
-
-## Deprecated files (do not use)
-
-- `HyroxTrainer.jsx` — Walker DC v1 app, hardcoded for 2 athletes. Do NOT use as rebuild foundation.
-- Newer reference files: `HyroxHungAndrewAnaheim.jsx`, `HyroxTrainingApp.jsx` — use these if needing to extract session templates or study the original plans.
-
-## Questions or edge cases?
-
-Refer to the contract docs first:
-- **Architecture:** ARCHITECTURE.md (why three layers, what goes where)
-- **Schema:** DATA_MODEL.md (all tables, columns, indexes, RLS policies)
-- **Product:** PRODUCT.md (user stories, features, out-of-scope work)
-- **Workflow:** This file + the memory system at `/Users/mrenolayan/.claude/projects/-Users-mrenolayan-Desktop-hyrox-trainer/memory/`
-
-If unsure, ask Reno rather than inferring. He's a React beginner, so explicit reasoning beats assumptions.
+**Canonical repo:** https://github.com/mrenolayan/Hyrox-Training
+**Architecture:** one app + Supabase + auth (NOT per-URL template duplication)
