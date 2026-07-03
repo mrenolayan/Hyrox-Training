@@ -197,20 +197,24 @@ export async function createTeamFull({
     if (a.profile) {
       const profileData = Object.fromEntries(Object.entries(a.profile).filter(([, v]) => v != null));
       if (Object.keys(profileData).length) {
-        await supabase.from("athlete_profiles").insert({ athlete_id: athlete.id, ...profileData });
+        unwrap("createTeamFull.profile", await supabase
+          .from("athlete_profiles")
+          .insert({ athlete_id: athlete.id, ...profileData }));
       }
     }
     if (a.ratings?.length) {
-      await supabase.from("station_ratings").insert(
-        a.ratings.map((r) => ({ athlete_id: athlete.id, station: r.station, rating: r.rating }))
-      );
+      unwrap("createTeamFull.station_ratings", await supabase
+        .from("station_ratings")
+        .insert(a.ratings.map((r) => ({ athlete_id: athlete.id, station: r.station, rating: r.rating }))));
     }
     if (a.modalities?.length) {
-      await supabase.from("athlete_modalities").insert(
-        a.modalities.map((m) => ({ athlete_id: athlete.id, modality: m }))
-      );
+      unwrap("createTeamFull.athlete_modalities", await supabase
+        .from("athlete_modalities")
+        .insert(a.modalities.map((m) => ({ athlete_id: athlete.id, modality: m }))));
     }
-    await supabase.from("team_members").insert({ team_id: team.id, athlete_id: athlete.id });
+    unwrap("createTeamFull.team_members", await supabase
+      .from("team_members")
+      .insert({ team_id: team.id, athlete_id: athlete.id }));
 
     athleteRows.push({
       ...athlete,
