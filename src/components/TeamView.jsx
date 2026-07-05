@@ -90,12 +90,15 @@ const currentPlanWeek = (startISO, totalWeeks) => {
 };
 
 // ── TeamView ───────────────────────────────────────────────────────────────────
-export default function TeamView({ team, plan, athletes: athletesProp = [], coach, isCoach = true, T, themeMode, resolvedTheme, units, onChangeTheme, onChangeUnits, onBack, onPlanUpdated }) {
+export default function TeamView({ team, plan, athletes: athletesProp = [], coach, isCoach = true, selfAthleteId = null, T, themeMode, resolvedTheme, units, onChangeTheme, onChangeUnits, onBack, onSignOut, onPlanUpdated }) {
   const members = athletesProp;
   const isTeamFormat = ["doubles_men","doubles_women","mixed_doubles","relay_men","relay_women","relay_mixed"].includes(team.format_id);
 
   const [planState, setPlanState]       = useState(plan);
   const [athleteIdx, setAthleteIdx]     = useState(() => {
+    // a logged-in athlete always starts on themselves
+    const selfIdx = selfAthleteId ? athletesProp.findIndex((a) => a.id === selfAthleteId) : -1;
+    if (selfIdx >= 0) return selfIdx;
     const saved = localStorage.getItem("hyrox-athlete-" + team?.id);
     return saved ? parseInt(saved, 10) : 0;
   });
@@ -124,6 +127,9 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
   const [error, setError]               = useState(null);
 
   const selectedAthlete = members[athleteIdx] ?? members[0];
+  // athletes may log/edit only for themselves; coaches for anyone. RLS enforces
+  // the same rule in the DB — this just keeps the UI honest.
+  const canWrite = isCoach || (!!selfAthleteId && selectedAthlete?.id === selfAthleteId);
   const sortedWeeks     = [...(planState?.plan_weeks ?? [])].sort((a, b) => a.week_number - b.week_number);
   const weekData        = sortedWeeks.find((w) => w.week_number === selectedWeek);
   const hasWeeks        = sortedWeeks.length > 0;
@@ -276,9 +282,15 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
 
           {/* back + theme + units */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <button onClick={onBack} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer", fontSize: 13, padding: 0 }}>
-              ← All teams
-            </button>
+            {onBack ? (
+              <button onClick={onBack} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer", fontSize: 13, padding: 0 }}>
+                ← All teams
+              </button>
+            ) : (
+              <button onClick={onSignOut} style={{ background: "none", border: "none", color: T.dim, cursor: "pointer", fontSize: 13, padding: 0 }}>
+                Sign out
+              </button>
+            )}
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontSize: 9, color: T.faint, textTransform: "uppercase", letterSpacing: "0.1em" }}>Theme:</span>
               {["auto","light","dark"].map((m) => (
@@ -411,6 +423,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
             T={T}
             isTeamFormat={isTeamFormat}
             isCoach={isCoach}
+            canWrite={canWrite}
             onToggleDone={handleToggleDone}
             onSaveLog={handleSaveLog}
             onSaveEdit={handleSaveEdit}
@@ -474,7 +487,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
   logs, logsLoading, openLog, setOpenLog, logDraft, setLogDraft,
   editingEntry, setEditingEntry, editDraft, setEditDraft,
   editingNote, setEditingNote, noteDraft, setNoteDraft,
-  units, resolvedTheme, T, isTeamFormat, isCoach, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
+  units, resolvedTheme, T, isTeamFormat, isCoach, canWrite, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
   hasWeeks, generating, onGenerate,
 }) {
   const PHASE_COLORS = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171" };
@@ -614,7 +627,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                     </div>
 
                     {/* right: done circle */}
-                    {!isRest && !isEditing && (
+                    {!isRest && !isEditing && canWrite && (
                       <button onClick={() => handleToggleDoneBtn(entry, log, onToggleDone)} style={{
                         width: 26, height: 26, borderRadius: 13, flexShrink: 0, cursor: "pointer",
                         background: log?.done ? st.color : "transparent",
@@ -625,7 +638,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                   </div>
 
                   {/* log row */}
-                  {!isRest && !isEditing && entry.metric_label && (
+                  {!isRest && !isEditing && entry.metric_label && canWrite && (
                     <div style={{ marginTop: 8 }}>
                       {!isOpen ? (
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -660,7 +673,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                     </div>
                   )}
                   {/* edit workout button when no metric (rest days with overrides etc.) */}
-                  {!isRest && !isEditing && !entry.metric_label && (
+                  {!isRest && !isEditing && !entry.metric_label && canWrite && (
                     <div style={{ marginTop: 6 }}>
                       <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "" }); }} style={{
                         background: "none", border: `1px solid ${T.border2}`, color: T.faint,

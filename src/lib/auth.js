@@ -1,34 +1,46 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  auth.js — thin wrapper around Supabase Auth.
-//
-//  Only this file and db.js import supabaseClient. All other modules (including
-//  App.jsx) call these named functions instead.
+//  auth.js — invite & role business logic. Pure functions: no React, no
+//  Supabase, no I/O. The session wrappers that used to live here talk to
+//  Supabase, so they moved to db.js in Phase 8 — db.js is the only boundary.
 // ════════════════════════════════════════════════════════════════════════════
-import { supabase } from "./supabaseClient.js";
 
-// Send a magic-link email. The link lands back at window.location.origin.
-export async function sendMagicLink(email) {
-  const { error } = await supabase.auth.signInWithOtp({ email });
-  if (error) throw new Error(`sendMagicLink: ${error.message}`);
+export const INVITE_TTL_DAYS = 30;
+
+// 48-hex-char random token. crypto.getRandomValues is the browser's CSPRNG —
+// unguessable, unlike Math.random().
+export function generateInviteToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw new Error(`signOut: ${error.message}`);
+export function isInviteExpired(invite, now = new Date()) {
+  return new Date(invite.expires_at).getTime() < now.getTime();
 }
 
-// Returns the current Supabase session, or null if not logged in.
-export async function getSession() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw new Error(`getSession: ${error.message}`);
-  return data.session;
+// 'accepted' | 'expired' | 'pending' | null — drives the dashboard status chip.
+export function inviteStatus(invite, now = new Date()) {
+  if (!invite) return null;
+  if (invite.accepted_at) return "accepted";
+  if (isInviteExpired(invite, now)) return "expired";
+  return "pending";
 }
 
-// Subscribe to auth state changes. Returns an unsubscribe function.
-// callback(session) — session is null when signed out.
-export function onAuthStateChange(callback) {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (_event, session) => callback(session)
-  );
-  return () => subscription.unsubscribe();
+// An athlete can be re-invited; the newest invite is the meaningful one.
+export function latestInvite(invites) {
+  if (!invites?.length) return null;
+  return [...invites].sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at)
+  )[0];
+}
+
+// Coach wins if an email somehow matches both a coach and an athlete row.
+export function resolveRole({ coach, athlete }) {
+  if (coach) return "coach";
+  if (athlete) return "athlete";
+  return null;
+}
+
+export function inviteUrl(origin, pathname, token) {
+  return `${origin}${pathname}?invite=${token}`;
 }

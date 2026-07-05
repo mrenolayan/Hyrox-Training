@@ -2,10 +2,38 @@
 //  db.js — the ONLY module that talks to Supabase.
 // ════════════════════════════════════════════════════════════════════════════
 import { supabase } from "./supabaseClient.js";
+import { generateInviteToken, inviteUrl } from "./auth.js";
 
 function unwrap(label, { data, error }) {
   if (error) throw new Error(`${label}: ${error.message}`);
   return data;
+}
+
+// ── auth session (moved from auth.js — db.js is the ONLY Supabase boundary) ──
+export async function sendMagicLink(email, redirectTo) {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+  });
+  if (error) throw new Error(`sendMagicLink: ${error.message}`);
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw new Error(`signOut: ${error.message}`);
+}
+
+export async function getSession() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error(`getSession: ${error.message}`);
+  return data.session;
+}
+
+export function onAuthStateChange(callback) {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (_event, session) => callback(session)
+  );
+  return () => subscription.unsubscribe();
 }
 
 // ── coaches ──────────────────────────────────────────────────────────────────
@@ -22,6 +50,70 @@ export async function linkCoachAuthId(userId, email) {
     .is("user_id", null);
 }
 
+// ── athlete invites ────────────────────────────────────────────────────────────
+export async function createInvite(athleteId, teamId, email) {
+  const token = generateInviteToken();
+  const rows = unwrap("createInvite", await supabase
+    .from("athlete_invites")
+    .insert({ athlete_id: athleteId, team_id: teamId, email, token })
+    .select());
+  await sendMagicLink(
+    email,
+    inviteUrl(window.location.origin, window.location.pathname, token)
+  );
+  return rows[0];
+}
+
+export async function acceptInvite(token) {
+  const { data, error } = await supabase.rpc("accept_invite", { p_token: token });
+  if (error) throw new Error(`acceptInvite: ${error.message}`);
+  return data; // claimed athlete id
+}
+
+// Mirror of linkCoachAuthId: best-effort claim by signed-in email when the
+// athlete arrives without the token. The DB function is a no-op if already linked.
+export async function linkAthleteAuthId() {
+  const { data, error } = await supabase.rpc("link_athlete_from_invite");
+  if (error) return null;
+  return data;
+}
+
+// coach | athlete | null — RLS scopes each select to what the caller may see.
+export async function getCurrentUserRole() {
+  const session = await getSession();
+  if (!session) return { role: null };
+  const coach = await getCoach();
+  if (coach) return { role: "coach", coach };
+  const athletes = unwrap("getCurrentUserRole.athlete", await supabase
+    .from("athletes")
+    .select("id, name, color")
+    .eq("user_id", session.user.id)
+    .limit(1));
+  if (athletes[0]) return { role: "athlete", athlete: athletes[0] };
+  return { role: null };
+}
+
+// Everything an athlete's own screen needs; RLS scopes every query to what
+// the caller may see (teammate rows just come back per the athlete policies).
+export async function getMyAthleteContext(athleteId) {
+  const memberships = unwrap("getMyAthleteContext.memberships", await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("athlete_id", athleteId)
+    .is("left_at", null)
+    .limit(1));
+  const teamId = memberships[0]?.team_id;
+  if (!teamId) return null;
+  const teamRows = unwrap("getMyAthleteContext.team", await supabase
+    .from("teams")
+    .select("id, name, format_id, units")
+    .eq("id", teamId)
+    .limit(1));
+  const plan = await getPlanForTeam(teamId);
+  const athletes = await getAthletesForTeam(teamId);
+  return { team: teamRows[0], plan, athletes };
+}
+
 // ── coach dashboard ───────────────────────────────────────────────────────────
 export async function getTeamsForCoach(coachId) {
   return unwrap("getTeamsForCoach", await supabase
@@ -29,7 +121,10 @@ export async function getTeamsForCoach(coachId) {
     .select(`
       id, name, format_id, units, require_auth, created_at,
       plans ( id, weeks, days_per_week, race_name, race_city, race_iso, status ),
-      team_members ( athlete:athletes ( id, name, color, role, run_pace ) )
+      team_members ( athlete:athletes (
+        id, name, color, role, run_pace, user_id,
+        athlete_invites ( id, email, accepted_at, expires_at, created_at )
+      ) )
     `)
     .eq("coach_id", coachId)
     .order("created_at", { ascending: true }));
@@ -276,21 +371,4 @@ export async function savePlanTree(planId, generatedWeeks) {
   }
 
   return { weeks: generatedWeeks.length, days: totalDays, entries: totalEntries };
-}
-
-// ── read: public team view (no auth required for require_auth=false teams) ─────
-// Anon RLS policies grant read access when team.require_auth = false.
-// Throws "AUTH_REQUIRED" so the caller can show the athlete magic-link screen.
-export async function getPublicTeamView(teamId) {
-  const teamRows = unwrap("getPublicTeamView.team", await supabase
-    .from("teams")
-    .select("id, name, format_id, units, require_auth")
-    .eq("id", teamId)
-    .limit(1));
-  const team = teamRows[0] ?? null;
-  if (!team) throw new Error("Team not found");
-  if (team.require_auth) throw new Error("AUTH_REQUIRED");
-  const plan = await getPlanForTeam(teamId);
-  const athletes = await getAthletesForTeam(teamId);
-  return { team, plan, athletes };
 }
