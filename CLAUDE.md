@@ -18,7 +18,7 @@ lives in `LEGACY_TEMPLATE_MODEL.md` for history only; do **not** follow it.
 **What the app is now:** one deployed app backed by **Supabase**. Every athlete
 is a row in a database, not a code fork. A coach manages many athletes; athletes
 log in to view their plan and log workouts. A UI change ships to everyone in one
-deploy.
+deploy. Production name: **RPM Athletics** (Reno Performance Method).
 
 | Concept | Old (dead) | Now |
 |---|---|---|
@@ -41,24 +41,24 @@ Read these before planning or building. Do not re-derive their contents here.
   model, data-loading strategy.
 - **`DATA_MODEL.md`** — the normalized schema, every table, RLS policies,
   indexes, migration-from-legacy plan.
-- **`PHASE7_STATE.md`** — the current implementation snapshot (what's built).
+- **`PHASE7_STATE.md`** — the prior implementation snapshot.
 
 ---
 
 ## The one rule that matters most: three layers, strictly separated
 
 ```
-UI components (React)        → render; read via hooks; NEVER import Supabase
-     ↑
-lib/*.js  (business logic)   → plan generation, pace math, unit conversion.
-                               Plain functions. NO React, NO Supabase, NO I/O.
-     ↑
-lib/db.js (data access)      → the ONLY module that talks to Supabase.
-                               If you grep "supabase" outside this file, it's a bug.
+UI components (React)        -> render; read via hooks; NEVER import Supabase
+     ^
+lib/*.js  (business logic)   -> plan generation, pace math, unit conversion.
+                                Plain functions. NO React, NO Supabase, NO I/O.
+     ^
+lib/db.js (data access)      -> the ONLY module that talks to Supabase.
+                                If you grep "supabase" outside this file, it's a bug.
 ```
 
 When something breaks, the layer tells you where to look: wrong number on screen
-→ `lib/` math; won't save → `lib/db.js`; button misplaced → UI. Full detail in
+-> `lib/` math; won't save -> `lib/db.js`; button misplaced -> UI. Full detail in
 `ARCHITECTURE.md`.
 
 ---
@@ -67,14 +67,13 @@ When something breaks, the layer tells you where to look: wrong number on screen
 
 - **Reno is** the coach, athlete, and developer. **React level: beginner** —
   always explain *why* code works, not just *what* it does.
-- **Show diffs → Reno reviews → then implement.** Never apply silently.
-- **For any bug or design fork, give 2–3 options with tradeoffs.** No silent
+- **Show diffs -> Reno reviews -> then implement.** Never apply silently.
+- **For any bug or design fork, give 2-3 options with tradeoffs.** No silent
   decisions.
 - **Never re-interview** for preferences already captured in the spec docs.
 - **Test locally (`npm run dev`) before any Vercel deploy.**
-- **Approve the schema before any migration runs against the live Supabase
-  project.** No migration hits the real DB without Reno's sign-off. (This rule
-  was crossed once already — do not skip it.)
+- **Approve the schema before any migration runs against a live Supabase
+  project.** No migration hits a real DB without Reno's sign-off.
 
 ---
 
@@ -89,10 +88,28 @@ When something breaks, the layer tells you where to look: wrong number on screen
   coach edits on regenerate** (diff + upsert — never clobber tweaks).
 - **RLS is the security boundary, not the UI.** Hiding a button is nicety;
   the database enforces access.
-- **Anonymous / account-less write access is NOT part of this app.** (A Phase 7
-  experiment added it via `?t=<team_id>` links; Phase 8 rolls it back. Every
-  athlete has an account. Login is required to view.) If a task seems to want
-  account-less writes, flag it — it contradicts the model.
+- **Anonymous / account-less write access is NOT part of this app.** Phase 8
+  rolled back the Phase 7 `?t=<team_id>` anon experiment. Every athlete has an
+  account; login is required to view. If a task seems to want account-less
+  access, flag it — it contradicts the model.
+
+---
+
+## Operational lessons (learned the hard way — apply every time)
+
+- **Regenerate Supabase types after any migration that adds tables or
+  relationships**, before testing. Stale types cause runtime errors like
+  "could not find a relationship between X and Y in the schema cache."
+- **Pre-flight the RLS lockout gate.** Before running any migration that
+  activates athlete/coach RLS, run `SELECT name, email, user_id FROM coaches;`
+  and confirm `user_id` is non-null. Activating RLS with a null coach user_id
+  locks the coach out of their own data.
+- **Dev-server port drift.** `npm run dev` falls back from 5173 to 5174 if 5173
+  is busy. Supabase Auth redirect URLs must include whatever port is actually
+  running, or magic links fail with connection-refused. Keep both localhost
+  ports in the Supabase allow list.
+- **Supabase email rate limit** throttles magic links per project after a few
+  sends; it resets in ~15-30 min. Not a bug — wait it out.
 
 ---
 
@@ -105,24 +122,39 @@ When something breaks, the layer tells you where to look: wrong number on screen
   restricts it.
 - Migrations live in `supabase/migrations/`, reviewed before running.
 
+### Environments (do not confuse these)
+
+- **`hyroxdev` Supabase** (project id `oszfkbgqshyimbbwntfq`) — dev/test DB.
+- **Production Supabase** — separate project, holds real Walker + Anaheim data.
+- **`hyrox-slot-1` Vercel** — disposable test deploy, Preview env vars -> `hyroxdev`.
+- **`rpm-athletics` Vercel** (`rpm-athletics.vercel.app`) — production home,
+  tracks `docs/rebuild-contract`, points at **production** Supabase. Not yet live.
+- **`team-walker-hyrox` / `hyrox-hung-andrew-anaheim` Vercel** — the two legacy
+  live apps. Leave untouched until the deliberate production cutover.
+
 ---
 
 ## Current phase
 
-**Phase 8 — Athlete Login & Invite.** Magic-link accounts for all athletes; the
-two legacy teams (Walker DC, Hung/Andrew Anaheim) claim their existing rows once;
-roll back Phase 7 anonymous access; login required to view. See the Phase 8 plan
-(in the Chat project) and `DATA_MODEL.md` for the RLS policies being activated.
+**Phase 8 — Athlete Login & Invite: BUILT and TESTED on the `hyrox-slot-1`
+preview + `hyroxdev`.** Migration `0004_phase8_auth.sql` ran clean; magic-link
+auth, coach dashboard, invite creation, and invite acceptance all verified
+end-to-end.
+
+**Open bug to fix before production cutover:** the `?invite=<token>` route
+auto-accepts on page load and lands on the dashboard instead of showing the
+"Claim your account" screen and requiring an explicit action first. Fix on the
+branch before deploying `rpm-athletics`.
 
 **Deployment-order caution:** never activate athlete RLS while `coaches.user_id`
-is null (locks the coach out). Verify it's set before running the Phase 8
-migration.
+is null (locks the coach out). Verify it's set before running an RLS migration
+against any DB — including production.
 
 ---
 
-## Roadmap (after Phase 8)
+## Roadmap (after production cutover)
 
-Data migration of legacy logs → normalized tables; in-app athlete intake form;
+Data migration of legacy logs -> normalized tables; in-app athlete intake form;
 Strava + Apple Health integration; AI coaching feedback; per-race leaderboards;
 pre-built template plans. Detail in `PRODUCT.md` / `ARCHITECTURE.md`.
 
