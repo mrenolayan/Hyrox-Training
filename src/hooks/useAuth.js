@@ -46,9 +46,11 @@ export default function useAuth(inviteToken) {
 
   const signInWithMagicLink = useCallback(
     (email, redirectTo) => db.sendMagicLink(email, redirectTo), []);
+  const verifyOtpCode = useCallback(
+    (email, token) => db.verifyOtpCode(email, token), []);
   const signOut = useCallback(() => db.signOut(), []);
 
   const loading = session === undefined || (!!session && role === undefined);
   return { session, user: session?.user ?? null, role, profile, loading,
-           inviteError, signInWithMagicLink, signOut };
+           inviteError, signInWithMagicLink, verifyOtpCode, signOut };
 }

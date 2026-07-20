@@ -22,7 +22,7 @@ function clearUrlParams() {
 
 export default function App() {
   const { session, role, profile, loading: authLoading,
-          inviteError, signInWithMagicLink, signOut } = useAuth(inviteToken);
+          inviteError, signInWithMagicLink, verifyOtpCode, signOut } = useAuth(inviteToken);
 
   const [teams, setTeams]             = useState([]);
   const [openTeam, setOpenTeam]       = useState(null); // { team, plan, athletes, isCoach, selfAthleteId }
@@ -114,6 +114,7 @@ export default function App() {
           ? `${window.location.origin}${window.location.pathname}?invite=${inviteToken}`
           : undefined
       )}
+      onVerifyCode={(email, code) => verifyOtpCode(email, code)}
     />
   );
 
@@ -346,17 +347,31 @@ function InviteModal({ T, athlete, teamId, defaultEmail, onSent, onCancel }) {
 }
 
 // ── Login screen ───────────────────────────────────────────────────────────────
-function LoginScreen({ T, claim, message, onSend }) {
+function LoginScreen({ T, claim, message, onSend, onVerifyCode }) {
   const [email, setEmail]     = useState("");
   const [sent, setSent]       = useState(false);
   const [sending, setSending] = useState(false);
   const [err, setErr]         = useState(null);
+  const [code, setCode]           = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [codeErr, setCodeErr]     = useState(null);
 
   async function handleSend() {
     setErr(null); setSending(true);
     try { await onSend(email); setSent(true); }
-    catch (e) { setErr(e.message); }
+    catch (e) {
+      setErr(e.message.includes("rate limit")
+        ? "Too many emails requested — wait a few minutes and try again, or enter the code from an email you already received."
+        : e.message);
+    }
     finally { setSending(false); }
+  }
+
+  async function handleVerify() {
+    setCodeErr(null); setVerifying(true);
+    try { await onVerifyCode(email, code.trim()); }
+    catch { setCodeErr("Code invalid or expired — request a new email."); }
+    finally { setVerifying(false); }
   }
 
   if (sent) {
@@ -366,6 +381,33 @@ function LoginScreen({ T, claim, message, onSend }) {
           <div style={{ fontSize: 32, marginBottom: 12 }}>📬</div>
           <p style={{ color: T.dim }}>Magic link sent to <strong style={{ color: T.text }}>{email}</strong>.</p>
           <p style={{ color: T.faint, fontSize: 13 }}>Check your inbox and click the link to sign in.</p>
+
+          <div style={{ marginTop: 28, textAlign: "left" }}>
+            <label style={{ display: "block", color: T.dim, fontSize: 12, marginBottom: 6 }}>
+              Or enter the 6-digit code from the email
+            </label>
+            <input
+              type="text" inputMode="numeric" autoComplete="one-time-code"
+              value={code} autoFocus
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleVerify()}
+              placeholder="123456"
+              style={{
+                display: "block", width: "100%", boxSizing: "border-box",
+                background: T.inset, border: `1px solid ${T.border}`,
+                borderRadius: 8, color: T.text, fontSize: 15, letterSpacing: "0.2em", textAlign: "center",
+                padding: "10px 12px", marginBottom: 12,
+                outline: "none", fontFamily: "inherit",
+              }}
+            />
+            <button onClick={handleVerify} disabled={verifying || !code.trim()} style={{
+              display: "block", width: "100%", padding: "10px 0",
+              background: "none", border: `1px solid #60a5fa`,
+              color: "#60a5fa", borderRadius: 8, fontSize: 14,
+              cursor: "pointer", opacity: (verifying || !code.trim()) ? 0.5 : 1,
+            }}>{verifying ? "Verifying…" : "Verify code"}</button>
+            {codeErr && <p style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{codeErr}</p>}
+          </div>
         </div>
       </Shell>
     );

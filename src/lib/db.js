@@ -18,6 +18,11 @@ export async function sendMagicLink(email, redirectTo) {
   if (error) throw new Error(`sendMagicLink: ${error.message}`);
 }
 
+export async function verifyOtpCode(email, token) {
+  const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  if (error) throw new Error(`verifyOtpCode: ${error.message}`);
+}
+
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw new Error(`signOut: ${error.message}`);
