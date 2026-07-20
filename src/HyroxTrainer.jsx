@@ -472,7 +472,20 @@ export default function HyroxDoubles() {
   );
 
   return (
-    <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: "'Avenir Next', 'Segoe UI', system-ui, sans-serif" }}>
+    <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: "'Avenir Next', 'Segoe UI', system-ui, sans-serif", paddingTop: 44 }}>
+      {/* Retirement notice — this app is frozen; do not remove */}
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+        background: "#dc2626", color: "#fff", textAlign: "center",
+        padding: "10px 16px", fontSize: 13, fontWeight: 700, lineHeight: 1.4,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+      }}>
+        ⚠️ This app has been retired and no longer receives updates. Your current plan lives at{" "}
+        <a href="https://rpm-athletics.vercel.app" style={{ color: "#fff", textDecoration: "underline" }}>
+          rpm-athletics.vercel.app
+        </a>{" "}
+        — bookmark that instead.
+      </div>
       {/* HEADER */}
       <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, padding: "18px 16px 0" }}>
         <div style={{ maxWidth: 720, margin: "0 auto" }}>
