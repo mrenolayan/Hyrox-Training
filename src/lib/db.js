@@ -187,6 +187,8 @@ export async function getPlanForTeam(teamId) {
       )
     `)
     .eq("team_id", teamId)
+    .neq("status", "archived")
+    .order("created_at", { ascending: false })
     .order("week_number", { referencedTable: "plan_weeks", ascending: true })
     .limit(1));
   return rows[0] ?? null;

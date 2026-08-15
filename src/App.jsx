@@ -187,7 +187,7 @@ export default function App() {
       </h1>
 
       {teams.map((team) => {
-        const plan = team.plans?.[0];
+        const plan = team.plans?.filter((p) => p.status !== "archived")[0];
         const members = team.team_members.map((m) => m.athlete);
         const daysOut = plan?.race_iso
           ? Math.ceil((new Date(plan.race_iso) - new Date()) / 86_400_000)
