@@ -72,7 +72,7 @@ function rest(athleteId) {
 function runEntries(athletes, km, baseDecKm, isTeam, sessionType) {
   const lo = paceLabel(baseDecKm);
   const hi = paceLabel(baseDecKm + 0.3);
-  const label = `${sessionType === "together" ? "Together" : "Easy Run"} ${km}km`;
+  const label = `${sessionType === "together" ? "Team Run" : "Easy Run"} ${km}km`;
   const suffix = isTeam ? " Hold team pace, conversational." : "";
   return athletes.map(a => {
     const roleNote = isTeam ? (isRoleType(a, "power") ? "Hold back — this is the team pace." : "This is your race pace — own it.") : "";
@@ -143,13 +143,13 @@ function stationCircuitEntries(athletes) {
 function sledEntries(athletes) {
   return athletes.map(a =>
     entry(a.id, "sled", "SLED @ RACE WEIGHT",
-      "Sled push 4×12.5m @ 152kg + pull 4×12.5m @ 103kg. Alternate, full rest between sets. Finish: 2km easy run together. Benchmark week — log everything.",
+      "Sled push 4×12.5m @ 152kg + pull 4×12.5m @ 103kg. Alternate, full rest between sets. Finish: 2km easy run. Benchmark week — log everything.",
       "Push/pull weights")
   );
 }
 
 const BRICK_VARIANTS = [
-  { label: "BRICK — Sled + Run",     detail: "4×(sled push 12.5m heavy + 800m run at race pace). Alternate the push, run every 800m together." },
+  { label: "BRICK — Sled + Run",     detail: "4×(sled push 12.5m heavy + 800m run at race pace). Alternate the push, run every 800m." },
   { label: "BRICK — Sled Sandwich",  detail: "3×(800m run + sled push 12.5m + 800m run + sled pull 12.5m). Run every leg at race pace, alternate the sleds." },
   { label: "BRICK — Race Pace",      detail: "4×(sled push 12.5m @ race weight + 1km at race pace). Exact race demand — alternate sleds, lock in transitions." },
   { label: "BRICK — Weakness Fix",   detail: null }, // filled per-athlete below
@@ -183,7 +183,7 @@ function conditioningEntries(athletes, condIdx) {
 function raceSimEntries(athletes) {
   return athletes.map(a =>
     entry(a.id, "race_sim", "🏁 FULL RACE SIM",
-      "8×(1km run + station) using your locked splits. Run every km together, alternate sleds, clean transitions. Time EVERYTHING — runs, stations, transitions. This is your race plan.",
+      "8×(1km run + station) using your locked splits. Run every km, alternate sleds, clean transitions. Time EVERYTHING — runs, stations, transitions. This is your race plan.",
       "Total time")
   );
 }

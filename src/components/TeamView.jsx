@@ -11,7 +11,7 @@ const SESSION_TYPES = {
   sled:         { color: "#f59e0b", bg: "#2a1800", icon: "🛷",   label: "Sled Work" },
   brick:        { color: "#ef4444", bg: "#2a0a0a", icon: "🔥",   label: "Brick" },
   stations:     { color: "#f0c020", bg: "#2a2200", icon: "⚙️",   label: "Stations" },
-  together:     { color: "#ec4899", bg: "#2a0a1e", icon: "👫",   label: "Together" },
+  together:     { color: "#ec4899", bg: "#2a0a1e", icon: "👫",   label: "Team Run" },
   race_sim:     { color: "#f0f020", bg: "#1a1a00", icon: "🏁",   label: "Race Sim" },
   conditioning: { color: "#22d3ee", bg: "#0a2226", icon: "💪",   label: "Conditioning" },
   rest:         { color: "#374151", bg: "#0c0c10", icon: "😴",   label: "Rest" },
@@ -1025,9 +1025,9 @@ function StrategyTab({ team, members, athleteDetails, T, units }) {
           Key rules — memorize these
         </div>
         {[
-          "Run every 1km lap together, side by side",
+          "Run every 1km lap side by side",
           "Split station reps any way you like — but only one athlete works at a time",
-          "Sleds are solo efforts: alternate, never push/pull together",
+          "Sleds are solo efforts: alternate, never push/pull at the same time",
           "Machines (SkiErg, Row): one must fully let go before the other takes over",
           "Farmers carry + sandbag lunges: pass equipment sideways or backwards only",
         ].map((r) => (
