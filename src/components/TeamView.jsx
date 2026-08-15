@@ -16,8 +16,16 @@ const SESSION_TYPES = {
   conditioning: { color: "#22d3ee", bg: "#0a2226", icon: "💪",   label: "Conditioning" },
   rest:         { color: "#374151", bg: "#0c0c10", icon: "😴",   label: "Rest" },
 };
-const PHASE_COLORS = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171" };
-const PHASE_NAMES  = { 1: "Base",    2: "Build",   3: "Peak + Taper" };
+// 3-phase plans (Walker DC, Anaheim, Josh) fold peak+taper into one final phase.
+// 4-phase plans (Vaca Creek) split them: phase 3 = Peak, phase 4 = Taper.
+const PHASE_COLORS_3 = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171" };
+const PHASE_NAMES_3  = { 1: "Base",    2: "Build",   3: "Peak + Taper" };
+const PHASE_COLORS_4 = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171", 4: "#38bdf8" };
+const PHASE_NAMES_4  = { 1: "Base",    2: "Build",   3: "Peak",         4: "Taper" };
+const phaseNames  = (maxPhase) => (maxPhase >= 4 ? PHASE_NAMES_4  : PHASE_NAMES_3);
+const phaseColors = (maxPhase) => (maxPhase >= 4 ? PHASE_COLORS_4 : PHASE_COLORS_3);
+const phaseName  = (phase, maxPhase) => phaseNames(maxPhase)[phase]  ?? `Phase ${phase}`;
+const phaseColor = (phase, maxPhase) => phaseColors(maxPhase)[phase] ?? "#9ca3af";
 const DAY_ORDER    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const KM_PER_MI    = 1.60934;
 const STATION_KG   = [152, 103, 24, 20, 6];
@@ -513,8 +521,9 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
   units, resolvedTheme, T, isTeamFormat, isCoach, canWrite, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
   hasWeeks, generating, onGenerate,
 }) {
-  const PHASE_COLORS = { 1: "#3b82f6", 2: "#f0c020", 3: "#f87171" };
-  const PHASE_NAMES  = { 1: "Base",    2: "Build",   3: "Peak + Taper" };
+  const maxPhase = sortedWeeks.length ? Math.max(...sortedWeeks.map((w) => w.phase)) : 3;
+  const PHASE_COLORS = phaseColors(maxPhase);
+  const PHASE_NAMES  = phaseNames(maxPhase);
 
   if (!hasWeeks) {
     return (
@@ -876,18 +885,20 @@ function PlanTab({ sortedWeeks, planState, selectedAthlete, T, resolvedTheme, un
       seen[w.phase].endWeek = w.week_number;
     }
   }
+  const maxPhase = phases.length ? Math.max(...phases.map((p) => p.phase)) : 3;
+  const PHASE_COLORS = phaseColors(maxPhase);
 
   return (
     <div>
       {/* Phase cards */}
       {phases.map((p) => (
         <div key={p.phase} style={{
-          background: T.card, border: `1px solid ${PHASE_COLORS[p.phase]}30`,
+          background: T.card, border: `1px solid ${phaseColor(p.phase, maxPhase)}30`,
           borderRadius: 12, padding: "14px 16px", marginBottom: 10,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: PHASE_COLORS[p.phase] }}>
-              Phase {p.phase}: {PHASE_NAMES[p.phase]}
+            <div style={{ fontSize: 15, fontWeight: 800, color: phaseColor(p.phase, maxPhase) }}>
+              Phase {p.phase}: {phaseName(p.phase, maxPhase)}
             </div>
             <div style={{ fontSize: 10, color: T.faint }}>
               W{p.startWeek}–{p.endWeek}
@@ -895,9 +906,11 @@ function PlanTab({ sortedWeeks, planState, selectedAthlete, T, resolvedTheme, un
             </div>
           </div>
           <div style={{ fontSize: 12, color: T.body, marginTop: 6, lineHeight: 1.5 }}>
-            {PHASE_NAMES[p.phase] === "Base" && "Build the aerobic engine. Learn pacing. Practice station basics."}
-            {PHASE_NAMES[p.phase] === "Build" && "HYROX-specific bricks. Stations under fatigue. Lock in rep splits."}
-            {PHASE_NAMES[p.phase] === "Peak + Taper" && "Race simulation. Sharpen. Taper. Arrive fresh on race day."}
+            {p.phase === 1 && "Build the aerobic engine. Learn pacing. Practice station basics."}
+            {p.phase === 2 && "HYROX-specific bricks. Stations under fatigue. Lock in rep splits."}
+            {p.phase === 3 && maxPhase === 3 && "Race simulation. Sharpen. Taper. Arrive fresh on race day."}
+            {p.phase === 3 && maxPhase >= 4 && "Race simulation at full intensity. Bricks, race-pace work, longest sessions of the block."}
+            {p.phase === 4 && "Volume drops hard. Stay sharp, not tired. Arrive fresh on race day."}
           </div>
         </div>
       ))}
