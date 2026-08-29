@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as db from "../lib/db.js";
 import { generatePlan } from "../lib/plan.js";
+import WorkoutDetailList from "./WorkoutDetailList.jsx";
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const SESSION_TYPES = {
@@ -648,7 +649,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                             {day.optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}
                             {day.shared && isTeamFormat && !day.optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}
                           </div>
-                          {detailText && <div style={{ fontSize: 11.5, color: T.body, marginTop: 3, lineHeight: 1.5 }}>{detailText}</div>}
+                          <WorkoutDetailList detail={detailText} T={T} />
                           {log?.metric && (
                             <div style={{ fontSize: 11, color: st.color, marginTop: 5, fontWeight: 600 }}>
                               📊 {log.metric}{log.notes ? ` — ${log.notes}` : ""}
