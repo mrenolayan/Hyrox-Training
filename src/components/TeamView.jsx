@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import * as db from "../lib/db.js";
 import { generatePlan } from "../lib/plan.js";
-import { buildWeekView, orderedDayItems, plannedDateISO } from "../lib/weekView.js";
+import { addDays, buildWeekView, formatShortDate, orderedDayItems, plannedDateISO, toISO } from "../lib/weekView.js";
 import WorkoutDetailList from "./WorkoutDetailList.jsx";
 import WorkoutModal from "./WorkoutModal.jsx";
 import WorkoutStub from "./WorkoutStub.jsx";
@@ -40,15 +40,20 @@ const sortDays = (days) =>
   [...days].sort((a, b) => DAY_ORDER.indexOf(a.day_of_week) - DAY_ORDER.indexOf(b.day_of_week));
 
 const weekRange = (startISO, weekNum) => {
-  const d = new Date(startISO + "T12:00:00");
-  d.setDate(d.getDate() + (weekNum - 1) * 7);
-  const end = new Date(d); end.setDate(end.getDate() + 6);
-  const f = (x) => x.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${f(d)} – ${f(end)}`;
+  const start = addDays(startISO, (weekNum - 1) * 7);
+  const end = addDays(start, 6);
+  return `${formatShortDate(start)} – ${formatShortDate(end)}`;
 };
 
+// raceISO/iso below are date-only strings ("YYYY-MM-DD"). The only Date
+// objects built from them use local (y, m-1, d) components — never
+// `new Date(isoString)`, which parses a bare date as UTC midnight and can
+// render a day off in any timezone west of Greenwich. Same rule weekView.js
+// follows for the day-grid; kept consistent here rather than mixing a
+// "safe by accident" T12:00:00 trick with the one real strategy.
 const countdownParts = (raceISO) => {
-  let ms = new Date(raceISO) - new Date();
+  const [y, m, d] = raceISO.split("-").map(Number);
+  let ms = new Date(y, m - 1, d) - new Date();
   if (ms < 0) ms = 0;
   return {
     days:    Math.floor(ms / 86_400_000),
@@ -58,8 +63,11 @@ const countdownParts = (raceISO) => {
   };
 };
 
-const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
 
 const parsePace = (str) => {
   if (!str) return null;
@@ -98,7 +106,11 @@ const inferSessionType = (label) => {
 // Compute current plan week from start date
 const currentPlanWeek = (startISO, totalWeeks) => {
   if (!startISO) return 1;
-  const diff = Math.floor((new Date() - new Date(startISO + "T00:00:00")) / (7 * 86_400_000)) + 1;
+  const [sy, sm, sd] = startISO.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const today = new Date();
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = Math.floor((todayMidnight - start) / (7 * 86_400_000)) + 1;
   return Math.max(1, Math.min(diff, totalWeeks));
 };
 
