@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as db from "../lib/db.js";
+import { formatShortDate } from "../lib/weekView.js";
 import WorkoutDetailList from "./WorkoutDetailList.jsx";
 import DateField from "./DateField.jsx";
 
@@ -59,7 +60,7 @@ export default function WorkoutModal({
     finally { setSaving(false); }
   }
 
-  const headerDate = `${day.day_of_week} · ${new Date(dateISO + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  const headerDate = `${day.day_of_week} · ${formatShortDate(dateISO)}`;
 
   return createPortal(
     <div
