@@ -1,7 +1,7 @@
 // Plain assertion script — no test runner in package.json, run with:
 //   node scripts/test-parseWorkoutDetail.mjs
 import assert from "node:assert/strict";
-import { parseWorkoutDetail } from "../src/lib/parseWorkoutDetail.js";
+import { classify, classifyHead, parseWorkoutDetail } from "../src/lib/parseWorkoutDetail.js";
 
 let passed = 0;
 function check(name, fn) {
@@ -103,34 +103,127 @@ check("real: 'Same circuit at your pace:' leadIn with no recognized keyword", ()
   assert.equal(notes[0].text, "One station at a time — build competence everywhere.");
 });
 
-// ── Fixup #2: trailing note paragraphs ───────────────────────────────────────
-// Real string, hyroxdev id bb1007ab-ff49-4c7e-b528-e94e86b87e0a (Andrew,
-// week 3 Mon) — verbatim, including the double space and blank line before
-// "WOD:". Previously the coaching sentence and the WOD block collapsed into
-// one run-on note.
-check("real: coaching sentence + blank-line-separated WOD block are two notes", () => {
+// ── Superseded by the per-segment classifier below ──────────────────────────
+// These two used to assert that a WOD block appended after "·"-separated
+// movements collapsed into a note (or two). That was itself a bug: a WOD
+// block is a workout, not a coaching note. Newlines are now a hard segment
+// boundary same as "·" (never one picked separator — see classifier fixture
+// below), and each resulting segment is classified by content, so the WOD
+// line now correctly comes back as a movement, in source order after the
+// note that precedes it.
+
+// ── classify() — the 4 rules given directly, as fragments ───────────────────
+check("classify: short digit-free phrase is a movement (word count under 5)", () => {
+  assert.equal(classify("Goblet carries"), "movement");
+});
+check("classify: digit-free 5+-word phrase with no terminal punctuation is a note", () => {
+  assert.equal(classify("Keep the last set heavy"), "note");
+});
+check("classify: digits win even with punctuation/word count that reads note-ish", () => {
+  assert.equal(classify("WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"), "movement");
+});
+check("classify: terminal period makes it a note", () => {
+  assert.equal(classify("This is your priority session every week from now on — strength is the gap, not fitness."), "note");
+});
+check("classify: bare trailing period on a digit-bearing tail is still a note", () => {
+  // classify() is used on splitAtSentence's tail — genuinely peeled prose.
+  // A real hyroxdev tail contains digits and is still clearly a note:
+  // "Race is 10 days out now, not 6 — a little more room to groove wall
+  // balls under mild fatigue before the taper gets strict." (id omitted,
+  // Walker DC). The terminator rule must win here even though a digit is
+  // present, unlike classifyHead below.
+  assert.equal(classify("Race is 10 days out now, not 6 — still enough runway to matter."), "note");
+});
+check("classifyHead: whole-segment head keeps its own trailing period without becoming a note", () => {
+  // classifyHead is used on splitAtSentence's head — including the "no
+  // split found" case, where head is the WHOLE segment, trailing period
+  // included, because it happened to be the last thing in the detail
+  // string. "Calf raises 3×15." (hyroxdev id 573b430e) and "Dead bug
+  // 3×10/side." (also real hyroxdev data) are movements, not notes, even
+  // though every sentence in English ends in punctuation. This is the fix
+  // for a regression that misclassified 71 of 380 real rows' final
+  // "·"-list item.
+  assert.equal(classifyHead("Calf raises 3×15."), "movement");
+  assert.equal(classifyHead("Dead bug 3×10/side."), "movement");
+  assert.equal(classifyHead("Hollow hold 3×25s."), "movement");
+});
+
+// ── Fixup #2 (per-segment classification) — the five real rows that mix "·"
+// and newline (grepped: every row in hyroxdev where detail includes both),
+// which previously glued whatever came after the first-picked separator
+// into one segment/note. All five ids: 3a92b770, bb1007ab, c805ff97,
+// a37aeb53, 573b430e.
+check("real 3a92b770: prefix line before an AMRAP splits into its own movement", () => {
+  const r = parseWorkoutDetail(
+    "3x10 Strict Press, rest then…\nAMRAP 16:00: 200m run · 12 air squats · 10 walking lunges · 8 burpees. Steady rounds. NOTES: Easy intro conditioning — smooth and controlled, not a sprint. Optional."
+  );
+  assert.equal(r.leadIn, null);
+  assert.deepEqual(r.items.map((i) => [i.type, i.text]), [
+    ["movement", "3x10 Strict Press, rest then…"],
+    ["movement", "AMRAP 16:00: 200m run"],
+    ["movement", "12 air squats"],
+    ["movement", "10 walking lunges"],
+    ["movement", "8 burpees"],
+    ["note", "Steady rounds."],
+    ["note", "Easy intro conditioning — smooth and controlled, not a sprint. Optional."],
+  ]);
+});
+
+check("real bb1007ab: WOD after a blank line is a movement, not a note, in source order", () => {
   const r = parseWorkoutDetail(
     "Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Goblet carries. This is your priority session every week from now on — strength is the gap, not fitness.  \n\n WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"
   );
   assert.equal(r.leadIn, null);
-  const movements = r.items.filter((i) => i.type === "movement").map((i) => i.text);
-  assert.deepEqual(movements, ["Back squat 4×6", "RDL 3×8", "Walking lunges 3×20/leg", "Goblet carries"]);
-  const notes = r.items.filter((i) => i.type === "note").map((i) => i.text);
-  assert.deepEqual(notes, [
-    "This is your priority session every week from now on — strength is the gap, not fitness.",
-    "WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run",
+  assert.deepEqual(r.items.map((i) => [i.type, i.text]), [
+    ["movement", "Back squat 4×6"],
+    ["movement", "RDL 3×8"],
+    ["movement", "Walking lunges 3×20/leg"],
+    ["movement", "Goblet carries"],
+    ["note", "This is your priority session every week from now on — strength is the gap, not fitness."],
+    ["movement", "WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"],
   ]);
 });
 
-// A single newline (no blank line) is a soft wrap within one paragraph, not
-// a paragraph break — folds to a space, stays one note. Real string,
-// hyroxdev id c805ff97-6db1-407a-b606-60c51e5161d6 (Hung, week 3 Mon).
-check("real: single-newline WOD tail stays one note (no blank line)", () => {
+check("real c805ff97: single-newline WOD is also its own movement, not folded into the note", () => {
   const r = parseWorkoutDetail(
     "Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Farmers carry 3×100m (your station — own the grip). Keep loads honest, not maximal yet.\nWOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"
   );
-  const notes = r.items.filter((i) => i.type === "note").map((i) => i.text);
-  assert.deepEqual(notes, ["Keep loads honest, not maximal yet. WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"]);
+  const tail = r.items.slice(-2).map((i) => [i.type, i.text]);
+  assert.deepEqual(tail, [
+    ["note", "Keep loads honest, not maximal yet."],
+    ["movement", "WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run"],
+  ]);
+});
+
+check("real a37aeb53: prefix line before an AMRAP, mid-string note, trailing note — all correctly typed", () => {
+  const r = parseWorkoutDetail(
+    "AMRAP 16:00: 200m run · 10 air squats · 8 burpees. Log your rounds. Moderate intensity on this one. Should go hard but not die\n\nPost workout run immediately after. \n\n"
+  );
+  assert.equal(r.leadIn, "AMRAP 16:00:");
+  assert.deepEqual(r.items.map((i) => [i.type, i.text]), [
+    ["movement", "200m run"],
+    ["movement", "10 air squats"],
+    ["movement", "8 burpees"],
+    ["note", "Log your rounds. Moderate intensity on this one. Should go hard but not die"],
+    ["note", "Post workout run immediately after."],
+  ]);
+});
+
+check("real 573b430e: the last remaining pre-existing bug is now fixed — nothing rides along unclassified", () => {
+  const r = parseWorkoutDetail(
+    "Gym. Back squat 4×6 · RDL 3×8 · Walking lunges 3×20/leg · Kettlebell carry 3×100m · Calf raises 3×15.\n\nDid this instead: 3x100 jump ropes, 3x500 skierg, 3x30 dumbbell thrust to shoulder press"
+  );
+  assert.equal(r.leadIn, null);
+  assert.equal(r.items.filter((i) => i.type === "note").length, 0);
+  assert.deepEqual(r.items.map((i) => i.text), [
+    "Gym",
+    "Back squat 4×6",
+    "RDL 3×8",
+    "Walking lunges 3×20/leg",
+    "Kettlebell carry 3×100m",
+    "Calf raises 3×15.",
+    "Did this instead: 3x100 jump ropes, 3x500 skierg, 3x30 dumbbell thrust to shoulder press",
+  ]);
 });
 
 // ── Fixup #3: "·"/";"/"\n" all count as plain-list separators ──────────────

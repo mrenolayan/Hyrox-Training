@@ -1,10 +1,20 @@
 // ════════════════════════════════════════════════════════════════════════════
 //  parseWorkoutDetail.js — splits a plan_entries.detail blob into a lead-in
 //  label plus an ordered list of movement/note items. Pure function, no React,
-//  no Supabase. See the algorithm write-up in the Phase 9 spec for the exact
-//  step-by-step rules this implements, and the fixup notes below for three
-//  corrections made against real hyroxdev data that the spec's fixtures
-//  didn't cover.
+//  no Supabase.
+//
+//  Every recognized separator (·, digit-gated ;, and any run of newlines)
+//  splits in ONE combined pass — mixing them in the same string (five real
+//  hyroxdev rows do, e.g. "·" for the main list then "\n\n" for an appended
+//  WOD block) used to glue whatever came after the first-picked separator
+//  into one segment. "→" is the exception: it keeps its own exclusive
+//  behavior and is the only separator that sets flow: true.
+//
+//  Each resulting segment is classified independently by content — not by
+//  position. There is no more "last segment is the note slot": a coaching
+//  line can be followed by another movement (a WOD appended after a
+//  sentence, a rest note wedged mid-list), and items preserve that source
+//  order.
 // ════════════════════════════════════════════════════════════════════════════
 
 const NOTES_LABEL_RE = /\bNOTES:\s*/i;
@@ -23,7 +33,12 @@ const LEAD_IN_WINDOW = 40;
 
 // First terminator ('. ' / '! ' / '? ') whose preceding character is not a
 // digit — guards against splitting inside "12.5m". Returns { head, tail }
-// where tail is null when no such terminator exists.
+// where tail is null when no such terminator exists. Used to peel prose
+// that's glued onto a movement within one segment, e.g. "500m ski. One
+// station at a time…" — head is still run through classify(), same as any
+// other piece of text, so a false split (a location tag like "Gym." ahead
+// of a real movement) just yields two short movement items rather than
+// mislabeling the second half as a note.
 function splitAtSentence(text) {
   SENTENCE_SPLIT_RE.lastIndex = 0;
   let m;
@@ -35,12 +50,12 @@ function splitAtSentence(text) {
   return { head: text.trim(), tail: null };
 }
 
-// A trailing note blob (the sentence peeled off the last movement, or the
-// held-aside NOTES: text) can itself be more than one paragraph — real
-// example: "...not fitness.  \n\n WOD: 3 Rounds - 20 Burpees, 30 squats,
-// 400m run" (hyroxdev id bb1007ab). Blank lines (two-or-more newlines)
-// start a new note item; a single newline is just a soft wrap within one
-// paragraph and gets folded into a space.
+// Held-aside NOTES: text can itself be more than one paragraph. Blank lines
+// (two-or-more newlines) start a new note item; a single newline is a soft
+// wrap within one paragraph and folds to a space. (Segment-level splitting
+// no longer needs this — every newline is already a hard segment boundary —
+// but the NOTES: marker is an explicit "this is a note" signal from the
+// coach, so its content stays note-only rather than being reclassified.)
 function splitIntoNoteParagraphs(text) {
   if (!text) return [];
   return text
@@ -53,10 +68,62 @@ function isSemicolonMovementList(body) {
   return body.includes(";") && !BAD_SEMICOLON_RE.test(body);
 }
 
+// A note if it ends in a terminal '.', '!', or '?' (a finished sentence —
+// covers "This is your priority session…not fitness."), OR if it has no
+// digit and reads as 5+ words of prose (covers "Keep the last set heavy",
+// which trails off with no terminal punctuation). Otherwise a movement —
+// including anything with a digit in it regardless of length or phrasing
+// ("WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run" has commas and a colon
+// but is clearly a workout, not a coaching note).
+//
+// Used on splitAtSentence's tail — genuinely peeled prose that continued
+// past a real sentence break, e.g. "Race is 10 days out now, not 6 — a
+// little more room to groove wall balls..." (real hyroxdev tail, contains
+// digits but is clearly a coaching note, not a rep count). The terminator
+// check is meaningful here because a tail's own ending really did end a
+// sentence.
+export function classify(text) {
+  if (/[.!?]$/.test(text)) return "note";
+  if (!/\d/.test(text)) {
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount >= 5) return "note";
+  }
+  return "movement";
+}
+
+// Used on splitAtSentence's head. A head from a genuine split never itself
+// ends in '.'/'!'/'?' — that character IS the split point, excluded by
+// construction — so the terminator rule never fires here anyway. It matters
+// for the OTHER case this is used in: when splitAtSentence found no split
+// point at all (tail === null) and "head" is the whole segment, trailing
+// punctuation included. There, a terminal period is just the sentence
+// ending because this happened to be the last thing in the detail string —
+// "Dead bug 3×10/side." and "Calf raises 3×15." are movements, not notes,
+// even though (like every other sentence in English) they end in a period.
+// Real regression this fixes: applying classify()'s terminator rule to
+// heads misclassified 71 of 380 real hyroxdev rows' final "·"-list item as
+// a note, purely because the whole detail string ends with a period.
+export function classifyHead(text) {
+  if (!/\d/.test(text)) {
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount >= 5) return "note";
+  }
+  return "movement";
+}
+
+function classifySegment(text) {
+  const items = [];
+  const { head, tail } = splitAtSentence(text);
+  if (head) items.push({ type: classifyHead(head), text: head });
+  if (tail) items.push({ type: classify(tail), text: tail });
+  return items;
+}
+
 export function parseWorkoutDetail(detail) {
   if (!detail || !detail.trim()) return { leadIn: null, items: [], flow: false };
 
-  // 2. Case-insensitively split off NOTES: — held aside for step 8.
+  // Case-insensitively split off NOTES: — held aside, appended at the end
+  // (it's already positioned last in the source text by construction).
   let body = detail;
   let notesAside = null;
   const notesMatch = NOTES_LABEL_RE.exec(detail);
@@ -66,12 +133,7 @@ export function parseWorkoutDetail(detail) {
   }
   body = body.trim();
 
-  // 3/4. Prose guard + choose separator. "·" wins if present (existing
-  // behavior); ";" (digit-gated) and "\n" sit at the same plain-list tier —
-  // real phone-typed workouts use bare newlines with no "·" at all (e.g.
-  // "Deadlift 4x10\nDumb bell step up 4x10\nLunges - dumb bell lunges 6x40ft",
-  // hyroxdev id b929a07d). "→" stays lowest priority and is the only one
-  // that sets flow — unchanged from the original algorithm.
+  // Prose guard: nothing recognized as a separator at all.
   const hasDot = body.includes("·");
   const hasSemi = isSemicolonMovementList(body);
   const hasNewline = body.includes("\n");
@@ -80,53 +142,53 @@ export function parseWorkoutDetail(detail) {
     return { leadIn: null, items: [{ type: "note", text: body }], flow: false };
   }
 
-  let separator;
+  // "·"/";"(digit-gated)/"\n" all split in one combined pass — never pick a
+  // single winner, so a string that mixes them (e.g. "·" for the main list,
+  // "\n\n" for an appended WOD) doesn't glue the back half onto one segment.
+  // "→" only comes into play when none of those three are present, and is
+  // the only case that sets flow: true.
+  let segments;
   let flow = false;
-  if (hasDot) separator = "·";
-  else if (hasSemi) separator = ";";
-  else if (hasNewline) separator = "\n";
-  else { separator = "→"; flow = true; }
+  if (hasDot || hasSemi || hasNewline) {
+    const parts = ["·"];
+    if (hasSemi) parts.push(";");
+    parts.push("\\n+");
+    segments = body.split(new RegExp(parts.join("|")));
+  } else {
+    segments = body.split("→");
+    flow = true;
+  }
 
-  // 5. Split into segments.
-  const segments = body.split(separator);
-
-  // 6. First segment — optional lead-in label. Any colon within the first
-  // ~40 chars ends a lead-in (not just a fixed keyword list — "Same circuit
-  // at your pace: 500m row easy" has no recognized keyword immediately
-  // before its colon, hyroxdev id f548826a). Take the LAST such colon so a
+  // First segment — optional lead-in label. Any colon within the first
+  // ~40 chars ends a lead-in (not a fixed keyword list — "Same circuit at
+  // your pace: 500m row easy" has no recognized keyword immediately before
+  // its colon, hyroxdev id f548826a). Take the LAST such colon so a
   // compound prefix like "30:00 @ 7 RPE. Continuous:" — which has an
   // earlier, unrelated colon inside "30:00" — still resolves to the whole
   // prefix, not just "30:".
   let leadIn = null;
-  const firstRaw = segments[0];
-  const window = firstRaw.slice(0, LEAD_IN_WINDOW);
-  const colonIdx = window.lastIndexOf(":");
-  let firstMovement;
-  if (colonIdx !== -1) {
-    leadIn = firstRaw.slice(0, colonIdx + 1).trim();
-    firstMovement = firstRaw.slice(colonIdx + 1).trim();
-  } else {
-    firstMovement = firstRaw.trim();
+  if (segments.length) {
+    const firstRaw = segments[0];
+    const window = firstRaw.slice(0, LEAD_IN_WINDOW);
+    const colonIdx = window.lastIndexOf(":");
+    if (colonIdx !== -1) {
+      leadIn = firstRaw.slice(0, colonIdx + 1).trim();
+      segments[0] = firstRaw.slice(colonIdx + 1);
+    }
   }
 
-  // 7. Last segment — trailing sentence peeled off as a note.
-  const lastRaw = segments[segments.length - 1];
-  const { head: lastMovement, tail: tailNote } = splitAtSentence(lastRaw);
+  // Classify every segment independently, in source order.
+  const items = [];
+  for (const seg of segments) {
+    const trimmed = seg.trim();
+    if (!trimmed) continue;
+    items.push(...classifySegment(trimmed));
+  }
 
-  // Middle segments are plain movements.
-  const middleMovements = segments.slice(1, -1).map((s) => s.trim());
-
-  const movements = [firstMovement, ...middleMovements, lastMovement].filter(Boolean);
-
-  // 8. Trailing note + the held-aside NOTES: text, each split into
-  // paragraphs on blank lines (fixup #2).
-  const notes = [...splitIntoNoteParagraphs(tailNote), ...splitIntoNoteParagraphs(notesAside)];
-
-  // 9. Movements precede notes; empties already dropped.
-  const items = [
-    ...movements.map((text) => ({ type: "movement", text })),
-    ...notes.map((text) => ({ type: "note", text })),
-  ];
+  // NOTES: text is always note(s), appended last.
+  for (const para of splitIntoNoteParagraphs(notesAside)) {
+    items.push({ type: "note", text: para });
+  }
 
   return { leadIn, items, flow };
 }
