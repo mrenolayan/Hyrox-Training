@@ -4,9 +4,9 @@ import { parseWorkoutDetail } from "../lib/parseWorkoutDetail.js";
 // of movements with a trailing dimmed coaching note, per parseWorkoutDetail.
 // Falls back to a plain paragraph for prose (rest days, easy-run descriptions)
 // — visually identical to how detail rendered before Step 1.
-export default function WorkoutDetailList({ detail, T, fontSize = 11.5 }) {
+export default function WorkoutDetailList({ detail, coachNote, T, fontSize = 11.5 }) {
   if (!detail) return null;
-  const { leadIn, items, flow } = parseWorkoutDetail(detail);
+  const { leadIn, items, flow } = parseWorkoutDetail(detail, coachNote);
 
   if (items.length === 0) return null;
 
@@ -51,6 +51,13 @@ export default function WorkoutDetailList({ detail, T, fontSize = 11.5 }) {
           );
         })}
       </ListTag>
+      {coachNote && (
+        <div style={{
+          fontStyle: "italic", opacity: 0.65, marginTop: 6, fontSize, color: T.body, lineHeight: 1.5,
+        }}>
+          {coachNote}
+        </div>
+      )}
     </div>
   );
 }

@@ -114,7 +114,7 @@ export default function WorkoutModal({
 
         {/* full workout, large type */}
         <div style={{ padding: "12px 16px 4px" }}>
-          <WorkoutDetailList detail={detailText} T={T} fontSize={15} />
+          <WorkoutDetailList detail={detailText} coachNote={entry.coach_note} T={T} fontSize={15} />
         </div>
 
         {/* logging controls */}

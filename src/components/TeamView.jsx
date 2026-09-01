@@ -140,7 +140,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
     if (team?.id) localStorage.setItem("hyrox-athlete-" + team.id, String(athleteIdx));
   }, [athleteIdx, team?.id]);
   const [editingEntry, setEditingEntry] = useState(null);
-  const [editDraft, setEditDraft]       = useState({ label: "", detail: "", metric_label: "" });
+  const [editDraft, setEditDraft]       = useState({ label: "", detail: "", metric_label: "", coach_note: "" });
   const [editingNote, setEditingNote]   = useState(false);
   const [noteDraft, setNoteDraft]       = useState("");
   const [showCountdown, setShowCountdown] = useState(false);
@@ -253,6 +253,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
         label: editDraft.label,
         detail: editDraft.detail,
         metric_label: editDraft.metric_label,
+        coach_note: editDraft.coach_note || null,
       }]);
       // update local plan state
       setPlanState((prev) => ({
@@ -264,7 +265,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
             plan_entries: d.plan_entries.map((e) =>
               e.id === entry.id
                 ? { ...e, label: editDraft.label, detail: editDraft.detail, metric_label: editDraft.metric_label,
-                    session_type: inferSessionType(editDraft.label) ?? e.session_type }
+                    coach_note: editDraft.coach_note || null, session_type: inferSessionType(editDraft.label) ?? e.session_type }
                 : e
             ),
           })),
@@ -704,6 +705,9 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                 <textarea value={editDraft.detail} onChange={(e) => setEditDraft((p) => ({ ...p, detail: e.target.value }))}
                   placeholder="Detail / instructions" rows={3}
                   style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+                <textarea value={editDraft.coach_note} onChange={(e) => setEditDraft((p) => ({ ...p, coach_note: e.target.value }))}
+                  placeholder="Coach note (rendered separately below workout)" rows={2}
+                  style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
                 <input value={editDraft.metric_label} onChange={(e) => setEditDraft((p) => ({ ...p, metric_label: e.target.value }))}
                   placeholder="Metric label (e.g. Avg pace /km)"
                   style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
@@ -736,7 +740,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
                   {optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}
                   {shared && isTeamFormat && !optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}
                 </div>
-                <WorkoutDetailList detail={detailText} T={T} />
+                <WorkoutDetailList detail={detailText} coachNote={entry.coach_note} T={T} />
                 {log?.metric && (
                   <div style={{ fontSize: 11, color: st.color, marginTop: 5, fontWeight: 600 }}>
                     📊 {log.metric}{log.notes ? ` — ${log.notes}` : ""}
@@ -760,7 +764,7 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
         {/* edit workout — plan-text editor, separate from logging */}
         {!isRest && !isEditing && canWrite && (
           <div style={{ marginTop: 8 }}>
-            <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "" }); }} style={{
+            <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "", coach_note: entry.coach_note ?? "" }); }} style={{
               background: "none", border: `1px solid ${T.border2}`, color: T.faint,
               borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer",
             }}>Edit workout</button>
