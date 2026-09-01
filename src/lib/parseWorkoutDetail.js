@@ -1,20 +1,24 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  parseWorkoutDetail.js — splits a plan_entries.detail blob into a lead-in
-//  label plus an ordered list of movement/note items. Pure function, no React,
-//  no Supabase.
+//  parseWorkoutDetail.js — splits plan_entries.detail into a lead-in label
+//  plus an ordered list of movement/note items.
 //
-//  Every recognized separator (·, digit-gated ;, and any run of newlines)
-//  splits in ONE combined pass — mixing them in the same string (five real
-//  hyroxdev rows do, e.g. "·" for the main list then "\n\n" for an appended
-//  WOD block) used to glue whatever came after the first-picked separator
-//  into one segment. "→" is the exception: it keeps its own exclusive
-//  behavior and is the only separator that sets flow: true.
+//  Two formats, selected by whether the row has a coach_note (nullable
+//  plan_entries column):
+//   - coach_note set  -> "new" format. Every segment in detail is a
+//     movement — no sentence classification, no abbreviation/paren guards.
+//     Coaching commentary belongs in coach_note; this module doesn't read
+//     its text, only whether it's present. The caller renders it separately.
+//   - coach_note null/absent -> "legacy" format: the frozen pre-migration
+//     algorithm (commit 97c6aa0) — split into segments, only the LAST
+//     segment gets one trailing sentence peeled off as a note. Do not
+//     extend this path; new capability goes in the new format instead.
 //
-//  Each resulting segment is classified independently by content — not by
-//  position. There is no more "last segment is the note slot": a coaching
-//  line can be followed by another movement (a WOD appended after a
-//  sentence, a rest note wedged mid-list), and items preserve that source
-//  order.
+//  Both formats share the prose guard (no recognized separator -> one
+//  prose paragraph, unchanged either way) and the combined ·/;/\n
+//  separator split (never a single picked winner, so a body that mixes
+//  them — five real hyroxdev rows do — doesn't glue the back half onto one
+//  segment). "→" is the exception: only used when none of those three are
+//  present, and the only one that sets flow: true.
 // ════════════════════════════════════════════════════════════════════════════
 
 const NOTES_LABEL_RE = /\bNOTES:\s*/i;
@@ -26,19 +30,46 @@ const BLANK_LINE_RE = /\n\s*\n+/;
 // punctuation ("...on the runs; ease off if anything feels off" — real
 // hyroxdev data, id 0485b186, which must stay prose, not split).
 const BAD_SEMICOLON_RE = /;(?!\s*\d)/;
-// How far into the first segment to look for a lead-in's terminating colon.
-// "30:00 @ 7 RPE. Continuous:" is ~27 chars: some room past that, not so much
-// that a colon deep inside a long first movement gets mistaken for a label.
+// How far into the first segment to look for a legacy lead-in's terminating
+// colon. "30:00 @ 7 RPE. Continuous:" is ~27 chars: some room past that,
+// not so much that a colon deep inside a long first movement gets mistaken
+// for a label.
 const LEAD_IN_WINDOW = 40;
+
+function isSemicolonMovementList(body) {
+  return body.includes(";") && !BAD_SEMICOLON_RE.test(body);
+}
+
+function hasAnySeparator(text) {
+  return text.includes("·") || isSemicolonMovementList(text) || text.includes("\n") || text.includes("→");
+}
+
+// Splits `text` on whichever separator(s) apply, per the shared rule above.
+// Always returns at least one segment — callers that already confirmed
+// hasAnySeparator() on a larger enclosing string may still call this on a
+// substring (e.g. new format's text after the lead-in line is removed)
+// that itself has no further separator; that's a valid one-segment result,
+// not a prose case.
+function splitSegments(text) {
+  const hasDot = text.includes("·");
+  const hasSemi = isSemicolonMovementList(text);
+  const hasNewline = text.includes("\n");
+  const hasArrow = text.includes("→");
+  if (hasDot || hasSemi || hasNewline) {
+    const parts = ["·"];
+    if (hasSemi) parts.push(";");
+    parts.push("\\n+");
+    return { segments: text.split(new RegExp(parts.join("|"))), flow: false };
+  }
+  if (hasArrow) return { segments: text.split("→"), flow: true };
+  return { segments: [text], flow: false };
+}
+
+// ── legacy format (coach_note null) — frozen, do not extend ────────────────
 
 // First terminator ('. ' / '! ' / '? ') whose preceding character is not a
 // digit — guards against splitting inside "12.5m". Returns { head, tail }
-// where tail is null when no such terminator exists. Used to peel prose
-// that's glued onto a movement within one segment, e.g. "500m ski. One
-// station at a time…" — head is still run through classify(), same as any
-// other piece of text, so a false split (a location tag like "Gym." ahead
-// of a real movement) just yields two short movement items rather than
-// mislabeling the second half as a note.
+// where tail is null when no such terminator exists.
 function splitAtSentence(text) {
   SENTENCE_SPLIT_RE.lastIndex = 0;
   let m;
@@ -50,12 +81,10 @@ function splitAtSentence(text) {
   return { head: text.trim(), tail: null };
 }
 
-// Held-aside NOTES: text can itself be more than one paragraph. Blank lines
-// (two-or-more newlines) start a new note item; a single newline is a soft
-// wrap within one paragraph and folds to a space. (Segment-level splitting
-// no longer needs this — every newline is already a hard segment boundary —
-// but the NOTES: marker is an explicit "this is a note" signal from the
-// coach, so its content stays note-only rather than being reclassified.)
+// A trailing note blob (the sentence peeled off the last movement, or the
+// held-aside NOTES: text) can itself be more than one paragraph. Blank
+// lines (two-or-more newlines) start a new note item; a single newline is
+// just a soft wrap within one paragraph and gets folded into a space.
 function splitIntoNoteParagraphs(text) {
   if (!text) return [];
   return text
@@ -64,66 +93,7 @@ function splitIntoNoteParagraphs(text) {
     .filter(Boolean);
 }
 
-function isSemicolonMovementList(body) {
-  return body.includes(";") && !BAD_SEMICOLON_RE.test(body);
-}
-
-// A note if it ends in a terminal '.', '!', or '?' (a finished sentence —
-// covers "This is your priority session…not fitness."), OR if it has no
-// digit and reads as 5+ words of prose (covers "Keep the last set heavy",
-// which trails off with no terminal punctuation). Otherwise a movement —
-// including anything with a digit in it regardless of length or phrasing
-// ("WOD: 3 Rounds - 20 Burpees, 30 squats, 400m run" has commas and a colon
-// but is clearly a workout, not a coaching note).
-//
-// Used on splitAtSentence's tail — genuinely peeled prose that continued
-// past a real sentence break, e.g. "Race is 10 days out now, not 6 — a
-// little more room to groove wall balls..." (real hyroxdev tail, contains
-// digits but is clearly a coaching note, not a rep count). The terminator
-// check is meaningful here because a tail's own ending really did end a
-// sentence.
-export function classify(text) {
-  if (/[.!?]$/.test(text)) return "note";
-  if (!/\d/.test(text)) {
-    const wordCount = text.split(/\s+/).filter(Boolean).length;
-    if (wordCount >= 5) return "note";
-  }
-  return "movement";
-}
-
-// Used on splitAtSentence's head. A head from a genuine split never itself
-// ends in '.'/'!'/'?' — that character IS the split point, excluded by
-// construction — so the terminator rule never fires here anyway. It matters
-// for the OTHER case this is used in: when splitAtSentence found no split
-// point at all (tail === null) and "head" is the whole segment, trailing
-// punctuation included. There, a terminal period is just the sentence
-// ending because this happened to be the last thing in the detail string —
-// "Dead bug 3×10/side." and "Calf raises 3×15." are movements, not notes,
-// even though (like every other sentence in English) they end in a period.
-// Real regression this fixes: applying classify()'s terminator rule to
-// heads misclassified 71 of 380 real hyroxdev rows' final "·"-list item as
-// a note, purely because the whole detail string ends with a period.
-export function classifyHead(text) {
-  if (!/\d/.test(text)) {
-    const wordCount = text.split(/\s+/).filter(Boolean).length;
-    if (wordCount >= 5) return "note";
-  }
-  return "movement";
-}
-
-function classifySegment(text) {
-  const items = [];
-  const { head, tail } = splitAtSentence(text);
-  if (head) items.push({ type: classifyHead(head), text: head });
-  if (tail) items.push({ type: classify(tail), text: tail });
-  return items;
-}
-
-export function parseWorkoutDetail(detail) {
-  if (!detail || !detail.trim()) return { leadIn: null, items: [], flow: false };
-
-  // Case-insensitively split off NOTES: — held aside, appended at the end
-  // (it's already positioned last in the source text by construction).
+function parseLegacy(detail) {
   let body = detail;
   let notesAside = null;
   const notesMatch = NOTES_LABEL_RE.exec(detail);
@@ -133,62 +103,91 @@ export function parseWorkoutDetail(detail) {
   }
   body = body.trim();
 
-  // Prose guard: nothing recognized as a separator at all.
+  if (!hasAnySeparator(body)) {
+    return { leadIn: null, items: [{ type: "note", text: body }], flow: false };
+  }
+
+  // Legacy format uses true 97c6aa0 single-winner separator selection:
+  // · wins if present, else digit-gated ;, else \n, else → (sets flow).
   const hasDot = body.includes("·");
   const hasSemi = isSemicolonMovementList(body);
   const hasNewline = body.includes("\n");
   const hasArrow = body.includes("→");
-  if (!hasDot && !hasSemi && !hasNewline && !hasArrow) {
-    return { leadIn: null, items: [{ type: "note", text: body }], flow: false };
-  }
 
-  // "·"/";"(digit-gated)/"\n" all split in one combined pass — never pick a
-  // single winner, so a string that mixes them (e.g. "·" for the main list,
-  // "\n\n" for an appended WOD) doesn't glue the back half onto one segment.
-  // "→" only comes into play when none of those three are present, and is
-  // the only case that sets flow: true.
-  let segments;
+  let separator;
   let flow = false;
-  if (hasDot || hasSemi || hasNewline) {
-    const parts = ["·"];
-    if (hasSemi) parts.push(";");
-    parts.push("\\n+");
-    segments = body.split(new RegExp(parts.join("|")));
-  } else {
-    segments = body.split("→");
+  if (hasDot) separator = "·";
+  else if (hasSemi) separator = ";";
+  else if (hasNewline) separator = "\n";
+  else {
+    separator = "→";
     flow = true;
   }
 
-  // First segment — optional lead-in label. Any colon within the first
-  // ~40 chars ends a lead-in (not a fixed keyword list — "Same circuit at
-  // your pace: 500m row easy" has no recognized keyword immediately before
-  // its colon, hyroxdev id f548826a). Take the LAST such colon so a
-  // compound prefix like "30:00 @ 7 RPE. Continuous:" — which has an
-  // earlier, unrelated colon inside "30:00" — still resolves to the whole
-  // prefix, not just "30:".
+  const segments = body.split(separator);
+
+  // Original colon-window lead-in: any colon within the first ~40 chars of
+  // segment 0 ends a lead-in. Take the LAST such colon so a compound prefix
+  // like "30:00 @ 7 RPE. Continuous:" — which has an earlier, unrelated
+  // colon inside "30:00" — still resolves to the whole prefix, not "30:".
   let leadIn = null;
-  if (segments.length) {
-    const firstRaw = segments[0];
-    const window = firstRaw.slice(0, LEAD_IN_WINDOW);
-    const colonIdx = window.lastIndexOf(":");
-    if (colonIdx !== -1) {
-      leadIn = firstRaw.slice(0, colonIdx + 1).trim();
-      segments[0] = firstRaw.slice(colonIdx + 1);
-    }
+  const firstRaw = segments[0];
+  const window = firstRaw.slice(0, LEAD_IN_WINDOW);
+  const colonIdx = window.lastIndexOf(":");
+  let firstMovement;
+  if (colonIdx !== -1) {
+    leadIn = firstRaw.slice(0, colonIdx + 1).trim();
+    firstMovement = firstRaw.slice(colonIdx + 1).trim();
+  } else {
+    firstMovement = firstRaw.trim();
   }
 
-  // Classify every segment independently, in source order.
-  const items = [];
-  for (const seg of segments) {
-    const trimmed = seg.trim();
-    if (!trimmed) continue;
-    items.push(...classifySegment(trimmed));
+  const lastRaw = segments[segments.length - 1];
+  const { head: lastMovement, tail: tailNote } = splitAtSentence(lastRaw);
+  const middleMovements = segments.slice(1, -1).map((s) => s.trim());
+  const movements = [firstMovement, ...middleMovements, lastMovement].filter(Boolean);
+  const notes = [...splitIntoNoteParagraphs(tailNote), ...splitIntoNoteParagraphs(notesAside)];
+
+  const items = [
+    ...movements.map((text) => ({ type: "movement", text })),
+    ...notes.map((text) => ({ type: "note", text })),
+  ];
+  return { leadIn, items, flow };
+}
+
+// ── new format (coach_note set) ─────────────────────────────────────────────
+
+function parseNewFormat(detail) {
+  const body = detail.trim();
+
+  if (!hasAnySeparator(body)) {
+    return { leadIn: null, items: [{ type: "note", text: body }], flow: false };
   }
 
-  // NOTES: text is always note(s), appended last.
-  for (const para of splitIntoNoteParagraphs(notesAside)) {
-    items.push({ type: "note", text: para });
+  // Session label, the only inference left in this path: if the first line
+  // of the text ends in a colon, it's the lead-in — typed deliberately by
+  // whoever wrote the detail, not inferred from content.
+  const nlIdx = body.indexOf("\n");
+  const firstLine = (nlIdx === -1 ? body : body.slice(0, nlIdx)).trim();
+  let leadIn = null;
+  let rest = body;
+  if (firstLine.endsWith(":")) {
+    leadIn = firstLine;
+    rest = nlIdx === -1 ? "" : body.slice(nlIdx + 1);
   }
+
+  const { segments, flow } = splitSegments(rest);
+  const items = segments
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((text) => ({ type: "movement", text }));
 
   return { leadIn, items, flow };
+}
+
+// ── entry point ──────────────────────────────────────────────────────────────
+
+export function parseWorkoutDetail(detail, coachNote) {
+  if (!detail || !detail.trim()) return { leadIn: null, items: [], flow: false };
+  return coachNote != null ? parseNewFormat(detail) : parseLegacy(detail);
 }
