@@ -141,10 +141,11 @@ preview + `hyroxdev`.** Migration `0004_phase8_auth.sql` ran clean; magic-link
 auth, coach dashboard, invite creation, and invite acceptance all verified
 end-to-end.
 
-**Open bug to fix before production cutover:** the `?invite=<token>` route
-auto-accepts on page load and lands on the dashboard instead of showing the
-"Claim your account" screen and requiring an explicit action first. Fix on the
-branch before deploying `rpm-athletics`.
+**Known limitation (low priority, not a deploy blocker):** the `?invite=<token>`
+route auto-accepts on page load and lands on the dashboard instead of showing
+the "Claim your account" screen and requiring an explicit action first.
+Production launched in July with this behavior present; it's a known
+limitation to revisit, not something that gates a deploy.
 
 **Deployment-order caution:** never activate athlete RLS while `coaches.user_id`
 is null (locks the coach out). Verify it's set before running an RLS migration
