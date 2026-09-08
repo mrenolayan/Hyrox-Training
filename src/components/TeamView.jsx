@@ -1,6 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as db from "../lib/db.js";
 import { generatePlan } from "../lib/plan.js";
+import { addDays, buildWeekView, formatShortDate, orderedDayItems, plannedDateISO, toISO } from "../lib/weekView.js";
+import WorkoutDetailList from "./WorkoutDetailList.jsx";
+import WorkoutModal from "./WorkoutModal.jsx";
+import WorkoutStub from "./WorkoutStub.jsx";
+import DateField from "./DateField.jsx";
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const SESSION_TYPES = {
@@ -35,38 +40,20 @@ const sortDays = (days) =>
   [...days].sort((a, b) => DAY_ORDER.indexOf(a.day_of_week) - DAY_ORDER.indexOf(b.day_of_week));
 
 const weekRange = (startISO, weekNum) => {
-  const d = new Date(startISO + "T12:00:00");
-  d.setDate(d.getDate() + (weekNum - 1) * 7);
-  const end = new Date(d); end.setDate(end.getDate() + 6);
-  const f = (x) => x.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${f(d)} – ${f(end)}`;
+  const start = addDays(startISO, (weekNum - 1) * 7);
+  const end = addDays(start, 6);
+  return `${formatShortDate(start)} – ${formatShortDate(end)}`;
 };
 
-const DAY_OFFSET = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
-// The date this specific plan_entry is scheduled for, per plans.start_iso — the
-// log form's default before an athlete overrides it.
-const entryDateISO = (startISO, weekNumber, dayOfWeek) => {
-  if (!startISO) return new Date().toISOString().slice(0, 10);
-  const d = new Date(startISO + "T12:00:00");
-  d.setDate(d.getDate() + (weekNumber - 1) * 7 + (DAY_OFFSET[dayOfWeek] ?? 0));
-  return d.toISOString().slice(0, 10);
-};
-
-const formatLongDate = (iso) =>
-  iso ? new Date(iso + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Select date";
-
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-const buildMonthCells = (year, month) => {
-  const startWeekday = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells = new Array(startWeekday).fill(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  return cells;
-};
-
+// raceISO/iso below are date-only strings ("YYYY-MM-DD"). The only Date
+// objects built from them use local (y, m-1, d) components — never
+// `new Date(isoString)`, which parses a bare date as UTC midnight and can
+// render a day off in any timezone west of Greenwich. Same rule weekView.js
+// follows for the day-grid; kept consistent here rather than mixing a
+// "safe by accident" T12:00:00 trick with the one real strategy.
 const countdownParts = (raceISO) => {
-  let ms = new Date(raceISO) - new Date();
+  const [y, m, d] = raceISO.split("-").map(Number);
+  let ms = new Date(y, m - 1, d) - new Date();
   if (ms < 0) ms = 0;
   return {
     days:    Math.floor(ms / 86_400_000),
@@ -76,8 +63,11 @@ const countdownParts = (raceISO) => {
   };
 };
 
-const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
 
 const parsePace = (str) => {
   if (!str) return null;
@@ -116,7 +106,11 @@ const inferSessionType = (label) => {
 // Compute current plan week from start date
 const currentPlanWeek = (startISO, totalWeeks) => {
   if (!startISO) return 1;
-  const diff = Math.floor((new Date() - new Date(startISO + "T00:00:00")) / (7 * 86_400_000)) + 1;
+  const [sy, sm, sd] = startISO.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const today = new Date();
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = Math.floor((todayMidnight - start) / (7 * 86_400_000)) + 1;
   return Math.max(1, Math.min(diff, totalWeeks));
 };
 
@@ -145,10 +139,8 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
   useEffect(() => {
     if (team?.id) localStorage.setItem("hyrox-athlete-" + team.id, String(athleteIdx));
   }, [athleteIdx, team?.id]);
-  const [openLog, setOpenLog]         = useState(null);  // entry_id whose form is open
-  const [logDraft, setLogDraft]       = useState({ metric: "", notes: "", date: new Date().toISOString().slice(0, 10) });
   const [editingEntry, setEditingEntry] = useState(null);
-  const [editDraft, setEditDraft]       = useState({ label: "", detail: "", metric_label: "" });
+  const [editDraft, setEditDraft]       = useState({ label: "", detail: "", metric_label: "", coach_note: "" });
   const [editingNote, setEditingNote]   = useState(false);
   const [noteDraft, setNoteDraft]       = useState("");
   const [showCountdown, setShowCountdown] = useState(false);
@@ -165,6 +157,30 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
   const weekData        = sortedWeeks.find((w) => w.week_number === selectedWeek);
   const hasWeeks        = sortedWeeks.length > 0;
 
+  // The whole plan's entries for the selected athlete, flattened once with
+  // their own plan_day/plan_week info attached (plan_entries itself carries
+  // no date). buildWeekView derives every week's view from this client-side —
+  // switching weeks never re-fetches.
+  const allEntries = useMemo(() => {
+    const out = [];
+    for (const week of planState?.plan_weeks ?? []) {
+      for (const day of week.plan_days ?? []) {
+        for (const entry of day.plan_entries ?? []) {
+          if (entry.athlete_id !== selectedAthlete?.id) continue;
+          out.push({
+            ...entry,
+            week_number: week.week_number,
+            day_of_week: day.day_of_week,
+            day_id: day.id,
+            optional: day.optional,
+            shared: day.shared,
+          });
+        }
+      }
+    }
+    return out;
+  }, [planState, selectedAthlete?.id]);
+
   // countdown ticker
   useEffect(() => {
     if (!showCountdown) return;
@@ -172,12 +188,23 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
     return () => clearInterval(id);
   }, [showCountdown]);
 
-  // load logs when selected athlete changes
+  // load logs when selected athlete changes — the whole plan's worth at once,
+  // not per-week (a log's date can land in a week other than where it's
+  // planned; see weekView.js). logs(athlete_id, plan_entry_id) is unique in
+  // the schema, so duplicates shouldn't occur, but this keys by latest
+  // created_at regardless, defensively.
   useEffect(() => {
     if (!selectedAthlete) return;
     setLogsLoading(true);
     db.getLogsForAthlete(selectedAthlete.id)
-      .then((rows) => setLogs(Object.fromEntries(rows.map((r) => [r.plan_entry_id, r]))))
+      .then((rows) => {
+        const byEntry = {};
+        for (const row of rows) {
+          const existing = byEntry[row.plan_entry_id];
+          if (!existing || row.created_at > existing.created_at) byEntry[row.plan_entry_id] = row;
+        }
+        setLogs(byEntry);
+      })
       .catch(() => {})
       .finally(() => setLogsLoading(false));
   }, [selectedAthlete?.id]);
@@ -196,22 +223,9 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
     finally { setGenerating(false); }
   }
 
-  // ── log a session ────────────────────────────────────────────────────────────
-  async function handleSaveLog(entry, day) {
-    try {
-      const saved = await db.saveLog({
-        athleteId: selectedAthlete.id,
-        planId: planState.id,
-        planEntryId: entry.id,
-        done: true,
-        metric: logDraft.metric || null,
-        notes: logDraft.notes || null,
-        loggedDate: logDraft.date || new Date().toISOString().slice(0, 10),
-      });
-      setLogs((prev) => ({ ...prev, [entry.id]: saved }));
-      setOpenLog(null);
-      setLogDraft({ metric: "", notes: "", date: new Date().toISOString().slice(0, 10) });
-    } catch (e) { setError(e.message); }
+  // ── log a session (the modal calls db.saveLog itself and hands back the row) ─
+  function handleLogSaved(log) {
+    setLogs((prev) => ({ ...prev, [log.plan_entry_id]: log }));
   }
 
   async function handleToggleDone(entry) {
@@ -239,6 +253,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
         label: editDraft.label,
         detail: editDraft.detail,
         metric_label: editDraft.metric_label,
+        coach_note: editDraft.coach_note || null,
       }]);
       // update local plan state
       setPlanState((prev) => ({
@@ -250,7 +265,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
             plan_entries: d.plan_entries.map((e) =>
               e.id === entry.id
                 ? { ...e, label: editDraft.label, detail: editDraft.detail, metric_label: editDraft.metric_label,
-                    session_type: inferSessionType(editDraft.label) ?? e.session_type }
+                    coach_note: editDraft.coach_note || null, session_type: inferSessionType(editDraft.label) ?? e.session_type }
                 : e
             ),
           })),
@@ -435,12 +450,9 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
             weekData={weekData}
             planState={planState}
             selectedAthlete={selectedAthlete}
+            allEntries={allEntries}
             logs={logs}
             logsLoading={logsLoading}
-            openLog={openLog}
-            setOpenLog={setOpenLog}
-            logDraft={logDraft}
-            setLogDraft={setLogDraft}
             editingEntry={editingEntry}
             setEditingEntry={setEditingEntry}
             editDraft={editDraft}
@@ -456,7 +468,7 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
             isCoach={isCoach}
             canWrite={canWrite}
             onToggleDone={handleToggleDone}
-            onSaveLog={handleSaveLog}
+            onLogSaved={handleLogSaved}
             onSaveEdit={handleSaveEdit}
             onSaveNote={handleSaveNote}
             hasWeeks={hasWeeks}
@@ -514,16 +526,29 @@ export default function TeamView({ team, plan, athletes: athletesProp = [], coac
 }
 
 // ── THIS WEEK tab ─────────────────────────────────────────────────────────────
-function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planState, selectedAthlete,
-  logs, logsLoading, openLog, setOpenLog, logDraft, setLogDraft,
+function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planState, selectedAthlete, allEntries,
+  logs, logsLoading,
   editingEntry, setEditingEntry, editDraft, setEditDraft,
   editingNote, setEditingNote, noteDraft, setNoteDraft,
-  units, resolvedTheme, T, isTeamFormat, isCoach, canWrite, onToggleDone, onSaveLog, onSaveEdit, onSaveNote,
+  units, resolvedTheme, T, isTeamFormat, isCoach, canWrite, onToggleDone, onLogSaved, onSaveEdit, onSaveNote,
   hasWeeks, generating, onGenerate,
 }) {
+  const [modalEntry, setModalEntry] = useState(null); // { entry, day, dateISO, detailText, metricLbl, st, log } | null
   const maxPhase = sortedWeeks.length ? Math.max(...sortedWeeks.map((w) => w.phase)) : 3;
   const PHASE_COLORS = phaseColors(maxPhase);
   const PHASE_NAMES  = phaseNames(maxPhase);
+
+  // Athletes see their week reordered by where they actually logged each
+  // workout; the coach dashboard always shows the plan as written. One shared
+  // component, gated by this prop — not a fork. buildWeekView is pure and
+  // runs over the whole-plan allEntries/logs already held in state, so
+  // switching weeks (selectedWeek) triggers zero queries.
+  const reorderByLogDate = !isCoach;
+  const weekView = useMemo(() => (
+    planState?.start_iso
+      ? buildWeekView({ planStartIso: planState.start_iso, weekNumber: selectedWeek, allEntries, logsByEntryId: logs })
+      : []
+  ), [allEntries, logs, selectedWeek, planState?.start_iso]);
 
   if (!hasWeeks) {
     return (
@@ -598,261 +623,160 @@ function WeekTab({ sortedWeeks, selectedWeek, setSelectedWeek, weekData, planSta
 
           {/* day cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {sortDays(weekData.plan_days ?? []).map((day) => {
-              const entry = (day.plan_entries ?? []).find((e) => e.athlete_id === selectedAthlete?.id);
-              if (!entry) return null;
-              const log = logs[entry.id];
-              const st  = SESSION_TYPES[entry.session_type] ?? SESSION_TYPES.rest;
-              const isRest = entry.session_type === "rest";
-              const isOpen  = openLog === entry.id;
-              const isEditing = editingEntry === entry.id;
-              const detailText = annotateWeights(entry.detail, units);
-              const metricLbl  = units === "us" && entry.metric_label?.includes("/km")
-                ? entry.metric_label.replace(/\/km/gi, "/mi") : entry.metric_label;
-
-              return (
-                <div key={day.id} style={{
-                  background: resolvedTheme === "light" ? `${st.color}14` : st.bg,
-                  border: `1px solid ${log?.done ? st.color : T.border}`,
-                  borderRadius: 10, padding: "10px 12px",
-                }}>
-                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    {/* left: day + icon */}
-                    <div style={{ width: 34, flexShrink: 0 }}>
-                      <div style={{ fontSize: 10, color: T.faint, fontWeight: 700 }}>{day.day_of_week}</div>
-                      <div style={{ fontSize: 18, marginTop: 2 }}>{st.icon}</div>
-                    </div>
-
-                    {/* middle: label + detail */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {isEditing ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <input value={editDraft.label} onChange={(e) => setEditDraft((p) => ({ ...p, label: e.target.value }))}
-                            placeholder="Session label"
-                            style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
-                          <textarea value={editDraft.detail} onChange={(e) => setEditDraft((p) => ({ ...p, detail: e.target.value }))}
-                            placeholder="Detail / instructions" rows={3}
-                            style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
-                          <input value={editDraft.metric_label} onChange={(e) => setEditDraft((p) => ({ ...p, metric_label: e.target.value }))}
-                            placeholder="Metric label (e.g. Avg pace /km)"
-                            style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => onSaveEdit(entry, day)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                            <button onClick={() => setEditingEntry(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: st.color }}>
-                            {entry.label}
-                            {day.optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}
-                            {day.shared && isTeamFormat && !day.optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}
-                          </div>
-                          {detailText && <div style={{ fontSize: 11.5, color: T.body, marginTop: 3, lineHeight: 1.5 }}>{detailText}</div>}
-                          {log?.metric && (
-                            <div style={{ fontSize: 11, color: st.color, marginTop: 5, fontWeight: 600 }}>
-                              📊 {log.metric}{log.notes ? ` — ${log.notes}` : ""}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {/* right: done circle */}
-                    {!isRest && !isEditing && canWrite && (
-                      <button onClick={() => handleToggleDoneBtn(entry, log, onToggleDone)} style={{
-                        width: 26, height: 26, borderRadius: 13, flexShrink: 0, cursor: "pointer",
-                        background: log?.done ? st.color : "transparent",
-                        border: `2px solid ${log?.done ? st.color : T.border2}`,
-                        color: "#07070e", fontSize: 13, fontWeight: 900, lineHeight: 1,
-                      }}>{log?.done ? "✓" : ""}</button>
-                    )}
-                  </div>
-
-                  {/* log row */}
-                  {!isRest && !isEditing && entry.metric_label && canWrite && (
-                    <div style={{ marginTop: 8 }}>
-                      {!isOpen ? (
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <button onClick={() => { setOpenLog(entry.id); setLogDraft({ metric: log?.metric || "", notes: log?.notes || "", date: log?.logged_date || entryDateISO(planState.start_iso, weekData.week_number, day.day_of_week) }); }} style={{
-                            background: "none", border: `1px solid ${T.border2}`, color: T.body,
-                            borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer",
-                          }}>{log?.metric ? "Edit log" : `Log: ${metricLbl}`}</button>
-                          <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "" }); }} style={{
-                            background: "none", border: `1px solid ${T.border2}`, color: T.faint,
-                            borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer",
-                          }}>Edit workout</button>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div>
-                            <label style={{ fontSize: 9, color: T.faint, textTransform: "uppercase", letterSpacing: "0.08em" }}>Date logged</label>
-                            <div style={{ marginTop: 3 }}>
-                              <DateField value={logDraft.date} onChange={(iso) => setLogDraft((p) => ({ ...p, date: iso }))} T={T} />
-                            </div>
-                          </div>
-                          <input value={logDraft.metric} onChange={(e) => setLogDraft((p) => ({ ...p, metric: e.target.value }))}
-                            placeholder={metricLbl}
-                            style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
-                          <input value={logDraft.notes} onChange={(e) => setLogDraft((p) => ({ ...p, notes: e.target.value }))}
-                            placeholder="Notes (optional)"
-                            style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "8px 10px", color: T.text, fontSize: 12 }} />
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => onSaveLog(entry, day)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                            <button onClick={() => setOpenLog(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {/* edit workout button when no metric (rest days with overrides etc.) */}
-                  {!isRest && !isEditing && !entry.metric_label && canWrite && (
-                    <div style={{ marginTop: 6 }}>
-                      <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "" }); }} style={{
-                        background: "none", border: `1px solid ${T.border2}`, color: T.faint,
-                        borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer",
-                      }}>Edit workout</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {reorderByLogDate
+              ? weekView.flatMap((day) => {
+                  const { items, stubs } = orderedDayItems(day);
+                  return [
+                    ...items.map(({ entry, log }) => renderCard({
+                      entry, log, dayOfWeek: day.dayOfWeek,
+                      optional: entry.optional, shared: entry.shared, dayId: entry.day_id,
+                      dateISO: day.dateISO,
+                    })),
+                    ...stubs.map(({ entry, log }) => (
+                      <WorkoutStub key={`stub-${entry.id}`} entry={entry} log={log} T={T} />
+                    )),
+                  ];
+                })
+              : sortDays(weekData.plan_days ?? []).map((day) => {
+                  const entry = (day.plan_entries ?? []).find((e) => e.athlete_id === selectedAthlete?.id);
+                  if (!entry) return null;
+                  return renderCard({
+                    entry, log: logs[entry.id],
+                    dayOfWeek: day.day_of_week, optional: day.optional, shared: day.shared, dayId: day.id,
+                    dateISO: plannedDateISO(planState.start_iso, weekData.week_number, day.day_of_week),
+                  });
+                })}
           </div>
         </div>
       )}
+
+      {modalEntry && (
+        <WorkoutModal
+          entry={modalEntry.entry}
+          day={modalEntry.day}
+          dateISO={modalEntry.dateISO}
+          detailText={modalEntry.detailText}
+          metricLbl={modalEntry.metricLbl}
+          st={modalEntry.st}
+          log={modalEntry.log}
+          athleteId={selectedAthlete?.id}
+          planId={planState?.id}
+          canWrite={canWrite}
+          T={T}
+          onClose={() => setModalEntry(null)}
+          onSaved={onLogSaved}
+        />
+      )}
     </div>
   );
+
+  // One workout card — shared by both the coach's planned-order list and the
+  // athlete's date-reordered one. `dayOfWeek`/`dateISO` describe where the
+  // card is currently shown; `optional`/`shared`/`dayId` describe the entry's
+  // own plan_day (its OPTIONAL/TOGETHER badges and edit-workout target don't
+  // change just because it moved).
+  function renderCard({ entry, log, dayOfWeek, optional, shared, dayId, dateISO }) {
+    const st = SESSION_TYPES[entry.session_type] ?? SESSION_TYPES.rest;
+    const isRest = entry.session_type === "rest";
+    const isEditing = editingEntry === entry.id;
+    const detailText = annotateWeights(entry.detail, units);
+    const metricLbl  = units === "us" && entry.metric_label?.includes("/km")
+      ? entry.metric_label.replace(/\/km/gi, "/mi") : entry.metric_label;
+    const dayMeta = { id: dayId, day_of_week: dayOfWeek, optional, shared };
+
+    return (
+      <div key={entry.id} style={{
+        background: resolvedTheme === "light" ? `${st.color}14` : st.bg,
+        border: `1px solid ${log?.done ? st.color : T.border}`,
+        borderRadius: 10, padding: "10px 12px",
+      }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          {isEditing ? (
+            <div style={{ display: "flex", gap: 10, flex: 1, alignItems: "flex-start" }}>
+              {/* left: day + icon */}
+              <div style={{ width: 34, flexShrink: 0 }}>
+                <div style={{ fontSize: 10, color: T.faint, fontWeight: 700 }}>{dayOfWeek}</div>
+                <div style={{ fontSize: 18, marginTop: 2 }}>{st.icon}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                <input value={editDraft.label} onChange={(e) => setEditDraft((p) => ({ ...p, label: e.target.value }))}
+                  placeholder="Session label"
+                  style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
+                <textarea value={editDraft.detail} onChange={(e) => setEditDraft((p) => ({ ...p, detail: e.target.value }))}
+                  placeholder="Detail / instructions" rows={3}
+                  style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+                <textarea value={editDraft.coach_note} onChange={(e) => setEditDraft((p) => ({ ...p, coach_note: e.target.value }))}
+                  placeholder="Coach note (rendered separately below workout)" rows={2}
+                  style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+                <input value={editDraft.metric_label} onChange={(e) => setEditDraft((p) => ({ ...p, metric_label: e.target.value }))}
+                  placeholder="Metric label (e.g. Avg pace /km)"
+                  style={{ background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "6px 10px", color: T.text, fontSize: 12, fontFamily: "inherit" }} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => onSaveEdit(entry, dayMeta)} style={{ background: st.color, border: "none", color: "#07070e", borderRadius: 6, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                  <button onClick={() => setEditingEntry(null)} style={{ background: "none", border: `1px solid ${T.border2}`, color: T.dim, borderRadius: 6, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModalEntry({ entry, day: dayMeta, dateISO, detailText, metricLbl, st, log })}
+              style={{
+                display: "flex", gap: 10, flex: 1, minWidth: 0, textAlign: "left",
+                background: "none", border: "none", padding: 0, margin: 0,
+                cursor: "pointer", color: "inherit", font: "inherit",
+              }}
+            >
+              {/* left: day + icon */}
+              <div style={{ width: 34, flexShrink: 0 }}>
+                <div style={{ fontSize: 10, color: T.faint, fontWeight: 700 }}>{dayOfWeek}</div>
+                <div style={{ fontSize: 18, marginTop: 2 }}>{st.icon}</div>
+              </div>
+
+              {/* middle: label + detail */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: st.color }}>
+                  {entry.label}
+                  {optional && <span style={{ fontSize: 9, color: "#a78bfa", marginLeft: 6, fontWeight: 600 }}>OPTIONAL</span>}
+                  {shared && isTeamFormat && !optional && <span style={{ fontSize: 9, color: "#ec4899", marginLeft: 6, fontWeight: 600 }}>TOGETHER</span>}
+                </div>
+                <WorkoutDetailList detail={detailText} coachNote={entry.coach_note} T={T} />
+                {log?.metric && (
+                  <div style={{ fontSize: 11, color: st.color, marginTop: 5, fontWeight: 600 }}>
+                    📊 {log.metric}{log.notes ? ` — ${log.notes}` : ""}
+                  </div>
+                )}
+              </div>
+            </button>
+          )}
+
+          {/* right: done circle */}
+          {!isRest && !isEditing && canWrite && (
+            <button onClick={() => handleToggleDoneBtn(entry, log, onToggleDone)} style={{
+              width: 26, height: 26, borderRadius: 13, flexShrink: 0, cursor: "pointer",
+              background: log?.done ? st.color : "transparent",
+              border: `2px solid ${log?.done ? st.color : T.border2}`,
+              color: "#07070e", fontSize: 13, fontWeight: 900, lineHeight: 1,
+            }}>{log?.done ? "✓" : ""}</button>
+          )}
+        </div>
+
+        {/* edit workout — plan-text editor, separate from logging */}
+        {!isRest && !isEditing && canWrite && (
+          <div style={{ marginTop: 8 }}>
+            <button onClick={() => { setEditingEntry(entry.id); setEditDraft({ label: entry.label, detail: entry.detail ?? "", metric_label: entry.metric_label ?? "", coach_note: entry.coach_note ?? "" }); }} style={{
+              background: "none", border: `1px solid ${T.border2}`, color: T.faint,
+              borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer",
+            }}>Edit workout</button>
+          </div>
+        )}
+      </div>
+    );
+  }
 }
 
 function handleToggleDoneBtn(entry, log, onToggleDone) {
   onToggleDone(entry);
-}
-
-// Tap-to-open calendar dropdown, anchored below the field. Continuous
-// month-scroll (not paged) — the visible window grows as the athlete scrolls
-// toward either edge, so there's no hard date-range restriction.
-function DateField({ value, onChange, T }) {
-  const [open, setOpen] = useState(false);
-  const [monthsBefore, setMonthsBefore] = useState(3);
-  const [monthsAfter, setMonthsAfter] = useState(15);
-  const wrapRef = useRef(null);
-  const scrollRef = useRef(null);
-  const prevScrollHeight = useRef(0);
-
-  const anchor = new Date((value || new Date().toISOString().slice(0, 10)) + "T12:00:00");
-  const anchorYear = anchor.getFullYear();
-  const anchorMonth = anchor.getMonth();
-  const todayISO = new Date().toISOString().slice(0, 10);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  // Jump to the selected (or today's) month whenever the picker opens.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const el = scrollRef.current;
-    const target = el?.querySelector('[data-current-month="true"]');
-    if (el && target) el.scrollTop = target.offsetTop;
-  }, [open]);
-
-  // Preserve scroll position when new months are prepended above the viewport.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !prevScrollHeight.current) return;
-    el.scrollTop += el.scrollHeight - prevScrollHeight.current;
-    prevScrollHeight.current = 0;
-  }, [monthsBefore]);
-
-  function handleScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (el.scrollTop < 40 && monthsBefore < 60) {
-      prevScrollHeight.current = el.scrollHeight;
-      setMonthsBefore((n) => n + 6);
-    }
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40 && monthsAfter < 60) {
-      setMonthsAfter((n) => n + 6);
-    }
-  }
-
-  const months = [];
-  for (let i = -monthsBefore; i <= monthsAfter; i++) {
-    const d = new Date(anchorYear, anchorMonth + i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth() });
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%", boxSizing: "border-box",
-        background: T.inset, border: `1px solid ${T.border2}`, borderRadius: 10,
-        padding: "10px 14px", color: T.text, fontSize: 13, fontFamily: "inherit", cursor: "pointer",
-      }}>
-        <span style={{ fontSize: 14 }}>📅</span>
-        <span style={{ flex: 1, textAlign: "center" }}>{formatLongDate(value)}</span>
-      </button>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 10px)", left: 0, zIndex: 20,
-          background: T.card, border: `1px solid ${T.border2}`, borderRadius: 12,
-          width: "100%", maxWidth: 300, boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
-        }}>
-          <div style={{
-            position: "absolute", top: -8, left: 24, width: 0, height: 0,
-            borderLeft: "8px solid transparent", borderRight: "8px solid transparent",
-            borderBottom: `8px solid ${T.card}`,
-          }} />
-          <div style={{
-            position: "sticky", top: 0, zIndex: 1, background: T.card,
-            display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
-            padding: "10px 10px 8px", borderBottom: `1px solid ${T.border}`,
-            borderTopLeftRadius: 12, borderTopRightRadius: 12,
-          }}>
-            {["S", "M", "T", "W", "T", "F", "S"].map((w, i) => (
-              <div key={i} style={{ fontSize: 11, fontWeight: 700, color: T.dim, textAlign: "center" }}>{w}</div>
-            ))}
-          </div>
-          <div ref={scrollRef} onScroll={handleScroll} style={{
-            position: "relative", maxHeight: 300, overflowY: "auto", padding: "4px 10px 10px",
-          }}>
-            {months.map(({ year, month }) => {
-              const isAnchorMonth = year === anchorYear && month === anchorMonth;
-              return (
-                <div key={`${year}-${month}`} data-current-month={isAnchorMonth ? "true" : undefined}>
-                  <div style={{ fontSize: 10, color: T.faint, fontWeight: 700, letterSpacing: "0.04em", margin: "10px 2px 4px" }}>
-                    {year} {MONTH_NAMES[month].toUpperCase()}
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
-                    {buildMonthCells(year, month).map((day, i) => {
-                      if (day == null) return <div key={i} />;
-                      const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                      const isSelected = iso === value;
-                      const isToday = iso === todayISO;
-                      return (
-                        <button type="button" key={i} onClick={() => { onChange(iso); setOpen(false); }} style={{
-                          width: "100%", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
-                          border: "none", borderRadius: "50%", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
-                          background: isSelected ? "#60a5fa" : "transparent",
-                          color: isSelected ? "#07070e" : isToday ? "#60a5fa" : T.body,
-                          fontWeight: isSelected || isToday ? 700 : 500,
-                        }}>{day}</button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ position: "sticky", bottom: 0, height: 20, background: `linear-gradient(to bottom, transparent, ${T.card})`, pointerEvents: "none" }} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── PLAN tab ──────────────────────────────────────────────────────────────────

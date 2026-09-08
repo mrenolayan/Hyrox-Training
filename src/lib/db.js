@@ -198,7 +198,7 @@ export async function getPlanForTeam(teamId) {
 export async function getLogsForAthlete(athleteId) {
   return unwrap("getLogsForAthlete", await supabase
     .from("logs")
-    .select("id, plan_entry_id, done, metric, notes, logged_date")
+    .select("id, plan_entry_id, done, metric, notes, logged_date, created_at")
     .eq("athlete_id", athleteId));
 }
 
