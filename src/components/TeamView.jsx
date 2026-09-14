@@ -45,15 +45,14 @@ const weekRange = (startISO, weekNum) => {
   return `${formatShortDate(start)} – ${formatShortDate(end)}`;
 };
 
-// raceISO/iso below are date-only strings ("YYYY-MM-DD"). The only Date
-// objects built from them use local (y, m-1, d) components — never
-// `new Date(isoString)`, which parses a bare date as UTC midnight and can
-// render a day off in any timezone west of Greenwich. Same rule weekView.js
-// follows for the day-grid; kept consistent here rather than mixing a
-// "safe by accident" T12:00:00 trick with the one real strategy.
+// race_iso is a timestamptz ("2026-12-06 16:00:00+00"), not a bare date —
+// unlike start_iso (a `date` column, handled with local y/m/d parsing
+// elsewhere in this file and in weekView.js to dodge the UTC-midnight
+// timezone trap). race_iso already carries real time + offset, so it goes
+// straight to `new Date(...)`, same as the "All teams" list view's
+// daysOut calc in App.jsx.
 const countdownParts = (raceISO) => {
-  const [y, m, d] = raceISO.split("-").map(Number);
-  let ms = new Date(y, m - 1, d) - new Date();
+  let ms = new Date(raceISO) - new Date();
   if (ms < 0) ms = 0;
   return {
     days:    Math.floor(ms / 86_400_000),
@@ -63,11 +62,8 @@ const countdownParts = (raceISO) => {
   };
 };
 
-const fmtDate = (iso) => {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-};
+const fmtDate = (iso) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
 const parsePace = (str) => {
   if (!str) return null;
